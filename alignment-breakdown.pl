@@ -20,18 +20,26 @@ no warnings 'recursion';
 
 $|++;
 
+# Pseudo-boolean that stores IP of server
 my $client;
-#my $port = 10001;
-my $port = 10002;
+
+# Server port
+my $port = 10001;
+
+# Stores executing machine hostnames
+my @machines;
+
+# Path to text file containing computers to run on
 my $machine_file_path;
+
+# Where this script is located 
 my $script_path = abs_path($0);
-#my $script_path = $0;
 
-my $alignment_path;
-my $alignment_name;
-my $alignment_root;
+#my $alignment_path;
+#my $alignment_name;
+#my $alignment_root;
 
-#my $gap_as_char;
+# MDL settings
 my $gap_isnt_char;
 my $exclude_gaps;
 my $nletters = 4;
@@ -44,18 +52,20 @@ my $min_block_size;
 
 my $num_pars_inf_chars;
 
+# How the script was called
 my $invocation = "perl alignment-breakdown.pl @ARGV";
 
 # Name of output directory
 #my $project_name = "alignment-breakdown-".time();
 my $project_name = "alignment-breakdown-dir";
 
+# Get paths to required executables
 my $mdl = check_path_for_exec("mdl");
 my $paup = check_path_for_exec("paup");
 
 # Read commandline settings
 GetOptions(
-	"align|a:s"        => \$alignment_path,
+	#"align|a:s"        => \$alignment_path,
 	"block-size|b:i"   => \$min_block_size,
 	"nletters|l:i"     => \$nletters,
 	"nbestpart|p:i"    => \$nbestpart,
@@ -71,10 +81,12 @@ GetOptions(
 	"usage"            => sub { print &usage; exit(0); },
 );
 
+my $align = shift(@ARGV);
+
 # Some error checking
-die "You must specify an alignment file.\n\n", &usage if (!defined($alignment_path));
-die "Could not locate '$alignment_path', perhaps you made a typo.\n" if (!-e $alignment_path);
-die "You must specify an alignment to partition.\n\n", &usage if (!defined($alignment_path));
+die "You must specify an alignment file.\n\n", &usage if (!defined($align));
+die "Could not locate '$align', perhaps you made a typo.\n" if (!-e $align);
+die "You must specify an alignment to partition.\n\n", &usage if (!defined($align));
 die "You must specify a minimum block length.\n\n",    &usage if (!defined($min_block_size));
 die "The minimum block size must be greater than 0!\n" if ($min_block_size <= 0);
 die "Forced breakpoints cannot be placed at the distance you specified!\n" if (defined($forced_break) && $forced_break <= 0);
@@ -86,24 +98,38 @@ $gap_isnt_char = 1 if (defined($exclude_gaps));
 $nletters++        if (!defined($exclude_gaps));
 
 # Set up directories
-($alignment_root = $alignment_path) =~ s/(.*\/).*/$1/;
-($alignment_name = $alignment_path) =~ s/.*\/(.*)\..*/$1/;
-
-if ($alignment_root eq $alignment_name) {
-	$alignment_root = getcwd()."/";
-	$alignment_name =~ s/(.*)\..*/$1/;
-}
+#($alignment_root = $alignment_path) =~ s/(.*\/).*/$1/;
+#($alignment_name = $alignment_path) =~ s/.*\/(.*)\..*/$1/;
+#
+#if ($alignment_root eq $alignment_name) {
+#	$alignment_root = getcwd()."/";
+#	$alignment_name =~ s/(.*)\..*/$1/;
+#}
 #chdir($alignment_root);
 
-(my $align_name = $alignment_path) =~ s/.*\/(.*)/$1/;
+#(my $align_name = $alignment_path) =~ s/.*\/(.*)/$1/;
+(my $align_root = $align) =~ s/.*\/(.*)/$1/;
+(my $align_root_no_ext = $align) =~ s/.*\/(.*)\..*/$1/;
 
+# Initialize working directory
 mkdir($project_name) || die "Could not create '$project_name'$!.\n" if (!-e $project_name);
 
-my $alignment_abs_path = abs_path($alignment_path);
-#run_cmd("ln -s $alignment_abs_path $project_name/$align_name");
-run_cmd("ln -s $alignment_abs_path $project_name/$align_name") if (! -e "$project_name/$align_name");
-$alignment_path = $align_name;
-$alignment_name = $align_name;
+#my $alignment_abs_path = abs_path($alignment_path);
+#run_cmd("ln -s $alignment_abs_path $project_name/$align_name") if (! -e "$project_name/$align_name");
+#$alignment_path = $align_name;
+#$alignment_name = $align_name;
+my $align_abs_path = abs_path($align);
+run_cmd("ln -s $align_abs_path $project_name/$align_root") if (! -e "$project_name/$align_root");
+#$alignment_path = $align_name;
+#$alignment_name = $align_name;
+
+if (defined($machine_file_path)) {
+	print "Fetching machine names listed in '$machine_file_path'...\n";
+	open(my $machine_file, '<', $machine_file_path);
+	chomp(@machines = <$machine_file>);
+	close($machine_file);
+	print "  $_\n" foreach (@machines);
+}
 
 chdir($project_name);
 
@@ -125,11 +151,11 @@ $SIG{'INT'} = 'INT_handler';
 print "\nScript was called as follows:\n$invocation\n";
 
 if (defined($forced_break)) {
-	print "\nWill now proceed to breakdown '$alignment_path' using a forced breakpoint after ";
+	print "\nWill now proceed to breakdown '$align' using a forced breakpoint after ";
 	print "",(($forced_break == 1) ? "every character, " : "every $forced_break characters, "), "and a minimum block size of $min_block_size.\n";
 }
 else {
-	print "\nWill now proceed to breakdown '$alignment_path' using a minimum block size of $min_block_size.\n";
+	print "\nWill now proceed to breakdown '$align' using a minimum block size of $min_block_size.\n";
 }
 
 #print "MDL settings: ",(($gap_as_char) ? "Gaps will be treated as characters, " : "Gaps will not be treated as characters, "); 
@@ -156,20 +182,24 @@ sub parse_input {
 	if ($pid == 0) {
 		my $TO_PARENT = $pipe->writer();
 
-		open(my $alignment_file, '<', $alignment_path) 
-			or die "Could not open '$alignment_path': $!\n";
-		chomp(my @data = <$alignment_file>);
-		close($alignment_file);
+	#	open(my $alignment_file, '<', $alignment_path) 
+	#		or die "Could not open '$alignment_path': $!\n";
+	#	chomp(my @data = <$alignment_file>);
+	#	close($alignment_file);
+		open(my $align_file, '<', $align_root) 
+			or die "Could not open '$align_root': $!\n";
+		chomp(my @data = <$align_file>);
+		close($align_file);
 
 		# Determine whether file is in Nexus or FASTA format, then parse it
 		if ($data[0] =~ /#NEXUS/i) {
 			#print "Input file \"$alignment_path\" appears to be a  Nexus file.\n\n";
-			print "Input file '$alignment_path' appears to be a  Nexus file.\n";
+			print "Input file '$align' appears to be a  Nexus file.\n";
 			parse_nexus({'ALIGN' => \%align, 'DATA' => \@data});
 		}
 		elsif ($data[0] =~ /^>/) {
 			#print "Input file \"$alignment_path\" appears to be a FASTA file.\n\n";
-			print "Input file '$alignment_path' appears to be a FASTA file.\n";
+			print "Input file '$align' appears to be a FASTA file.\n";
 			parse_fasta({'ALIGN' => \%align, 'DATA' => \@data});
 		}
 
@@ -360,7 +390,8 @@ sub write_nexus_file_reduced {
 	# Use sysopen and the O_NDELAY flag for faster output.
 	#my $file_name = $alignment_root.$alignment_name."-$token-".($number+1)."of$total.nex";
 	#my $file_name = $alignment_root.$alignment_name."-$token-".($number+1).".nex";
-	my $file_name = $alignment_name."-$token-".($number+1).".nex";
+	#my $file_name = $alignment_name."-$token-".($number+1).".nex";
+	my $file_name = $align_root_no_ext."-$token-".($number+1).".nex";
 	unlink($file_name) if (-e $file_name);
 
 	sysopen(my $out, $file_name, O_WRONLY|O_NDELAY|O_CREAT)
@@ -412,7 +443,8 @@ sub dump_alignment {
 	my $nchar = $end - $start;
 
 	#my $file_name = $alignment_root.$alignment_name."-$token-".($number+1)."of$total";
-	my $file_name = $alignment_name."-$token-".($number+1)."of$total";
+	#my $file_name = $alignment_name."-$token-".($number+1)."of$total";
+	my $file_name = $align_root_no_ext."-$token-".($number+1)."of$total";
 	unlink($file_name) if (-e $file_name);
 
 	sysopen(my $out, $file_name, O_WRONLY|O_NDELAY|O_CREAT)
@@ -453,7 +485,8 @@ sub write_nexus_file {
 	#my $nchar = $end - $start + 1;
 
 	#my $file_name = $alignment_root.$alignment_name."-$token-".($number+1)."of$total.nex";
-	my $file_name = $alignment_name."-$token-".($number+1)."of$total.nex";
+	#my $file_name = $alignment_name."-$token-".($number+1)."of$total.nex";
+	my $file_name = $align_root_no_ext."-$token-".($number+1)."of$total.nex";
 	unlink($file_name) if (-e $file_name);
 
 	sysopen(my $out, $file_name, O_WRONLY|O_NDELAY|O_CREAT)
@@ -499,7 +532,8 @@ sub write_phylip_file_segment {
 	#my $align = $settings->{'ALIGN'};
 	my @genes = @{$settings->{'GENES'}};
 
-	(my $gene_number = $genes[$number]->{'SCORE_FILE_NAME'}) =~ s/\Q$alignment_name\E-scores-//;
+	#(my $gene_number = $genes[$number]->{'SCORE_FILE_NAME'}) =~ s/\Q$alignment_name\E-scores-//;
+	(my $gene_number = $genes[$number]->{'SCORE_FILE_NAME'}) =~ s/\Q$align_root_no_ext\E-scores-//;
 	
 	my $start = $genes[$number]->{'GENE_START'};
 	my $end = $genes[$number]->{'GENE_END'};
@@ -594,14 +628,16 @@ sub paup_cstatus {
 
 	#my $file_name = $alignment_root.$alignment_name."-".($number+1)."of$total.nex";
 	#my $file_name = $alignment_root.$alignment_name."-$token-".($number+1)."of$total.nex";
-	my $file_name = $alignment_name."-$token-".($number+1)."of$total.nex";
+	#my $file_name = $alignment_name."-$token-".($number+1)."of$total.nex";
+	my $file_name = $align_root_no_ext."-$token-".($number+1)."of$total.nex";
 
 	my $paup = check_path_for_exec("paup");
 
 	my $paup_commands = "execute $file_name;\ncstatus full=yes;\n";
 
 	#my $log_path = $alignment_root."log-$alignment_name"."-$token-".($number+1)."of$total.nex";
-	my $log_path = "log-$alignment_name"."-$token-".($number+1)."of$total.nex";
+	#my $log_path = "log-$alignment_name"."-$token-".($number+1)."of$total.nex";
+	my $log_path = "log-$align_root_no_ext"."-$token-".($number+1)."of$total.nex";
 
 	open(my $std_out, ">&", *STDOUT);
 	close(STDOUT);
@@ -692,31 +728,45 @@ sub get_informative_chars {
 	undef(%locations);
 	$num_pars_inf_chars = scalar(@locations);
 	#print "\n",&timestamp,scalar(@locations)," total parsimony-informative sites found for $chromosome.\n\n";
-	print "\n", $num_pars_inf_chars, " total parsimony-informative sites found for '$alignment_path'.\n\n";
+	#print "\n", $num_pars_inf_chars, " total parsimony-informative sites found for '$alignment_path'.\n\n";
+#	print "\n", $num_pars_inf_chars, " total parsimony-informative sites found for '$align'.\n\n";
+#
+#	my $total_output_files = 1;
+#	if (defined($forced_break)) {
+#		$total_output_files = ceil($num_pars_inf_chars / $forced_break);
+#	}
+#	else {
+#		$forced_break = $num_pars_inf_chars;
+#	}
+#
+#	parallelize({'METHOD' => 'write_nexus_file_reduced', 'METHOD_ARGS' => {'ALIGN' => \%align, 'TOKEN' => 'reduced', 'LOCATIONS' => \@locations}, 'MAX_FORKS' => $free_cpus, 'TOTAL' => $total_output_files});
+##	parallelize({'METHOD'      => 'write_nexus_file_reduced', 
+##	             'METHOD_ARGS' => {'ALIGN' => \%align, 
+##				                   'TOKEN' => 'reduced'}, 
+##				 'MAX_FORKS'   => $free_cpus, 
+##				 'TOTAL'       => $total_output_files});
 
+#	if (!glob("$align_root_no_ext-reduced-*.nex")) {
+		print "\n", $num_pars_inf_chars, " total parsimony-informative sites found for '$align'.\n\n";
 
-	my $total_output_files = 1;
-	if (defined($forced_break)) {
-		$total_output_files = ceil($num_pars_inf_chars / $forced_break);
-	}
-	else {
-		$forced_break = $num_pars_inf_chars;
-	}
+		my $total_output_files = 1;
+		if (defined($forced_break)) {
+			$total_output_files = ceil($num_pars_inf_chars / $forced_break);
+		}
+		else {
+			$forced_break = $num_pars_inf_chars;
+		}
 
-	parallelize({'METHOD' => 'write_nexus_file_reduced', 'METHOD_ARGS' => {'ALIGN' => \%align, 'TOKEN' => 'reduced', 'LOCATIONS' => \@locations}, 'MAX_FORKS' => $free_cpus, 'TOTAL' => $total_output_files});
-#	parallelize({'METHOD'      => 'write_nexus_file_reduced', 
-#	             'METHOD_ARGS' => {'ALIGN' => \%align, 
-#				                   'TOKEN' => 'reduced'}, 
-#				 'MAX_FORKS'   => $free_cpus, 
-#				 'TOTAL'       => $total_output_files});
-	
+		parallelize({'METHOD' => 'write_nexus_file_reduced', 'METHOD_ARGS' => {'ALIGN' => \%align, 'TOKEN' => 'reduced', 'LOCATIONS' => \@locations}, 'MAX_FORKS' => $free_cpus, 'TOTAL' => $total_output_files});
+#	}
 }
 
 # Runs the actual MDL analyses required to breakdown the given alignment
 sub run_mdl {
 	#my $settings = shift;
 
-	print "\n", $num_pars_inf_chars, " total parsimony-informative sites found for '$alignment_path'.\n\n";
+	#print "\n", $num_pars_inf_chars, " total parsimony-informative sites found for '$alignment_path'.\n\n";
+	#print "\n", $num_pars_inf_chars, " total parsimony-informative sites found for '$align'.\n\n";
 
 	my @genes;
 	#my %blocks_per_break;
@@ -742,7 +792,8 @@ sub run_mdl {
 		}
 		$nchar{$count} = $align_length;
 		
-		my $input_file_name = $alignment_name."-reduced-".$count."of"."$total.nex";
+		#my $input_file_name = $alignment_name."-reduced-".$count."of"."$total.nex";
+		my $input_file_name = $align_root_no_ext."-reduced-".$count."of"."$total.nex";
 
 		my $last_gene_size = $align_length % $min_block_size;
 		my $total_genes = ($align_length - $last_gene_size) / $min_block_size;
@@ -828,14 +879,14 @@ sub run_mdl {
 
 	# If a machine file was defined read it in and get the machine names
 
-	my @machines;
-	if (defined($machine_file_path)) {
-		print "  Fetching machine names listed in '$machine_file_path'...\n";
-		open(my $machine_file, '<', $machine_file_path);
-		chomp(@machines = <$machine_file>);
-		close($machine_file);
-		print "    $_\n" foreach (@machines);
-	}
+#	#my @machines;
+#	if (defined($machine_file_path)) {
+#		print "  Fetching machine names listed in '$machine_file_path'...\n";
+#		open(my $machine_file, '<', $machine_file_path);
+#		chomp(@machines = <$machine_file>);
+#		close($machine_file);
+#		print "    $_\n" foreach (@machines);
+#	}
 
 	#chdir($phylip_dir);
 
@@ -854,6 +905,11 @@ sub run_mdl {
 			#	exec("ssh", $machine, "perl", "./".$script_name, "--client=$server_ip");
 				system("scp", "-q", $script_path, $machine.":/tmp");
 				system("scp", "-q", $paup , $machine.":/tmp");
+
+				if ($machine ne $server_hostname) {
+					system("scp -q *-reduced-* $machine:/tmp");
+				}
+
 				exec("ssh", $machine, "perl", "/tmp/".$script_name, "--client=$server_ip");
 #			}
 #			else {
@@ -914,8 +970,10 @@ sub run_mdl {
 				foreach my $index (sort { $a <=> $b } keys %scores) {
 					#my @partition = @{$scores[$index - 1]};
 					my @partition = @{$scores{$index}};
-					open(my $joined_score_file, '>>', $score_dir.$alignment_name."-all-scores-$index") 
-						or die "Could not open '".$score_dir.$alignment_name."-all-scores-$index': $!.\n";
+				#	open(my $joined_score_file, '>>', $score_dir.$alignment_name."-all-scores-$index") 
+				#		or die "Could not open '".$score_dir.$alignment_name."-all-scores-$index': $!.\n";
+					open(my $joined_score_file, '>>', $score_dir.$align_root_no_ext."-all-scores-$index") 
+						or die "Could not open '".$score_dir.$align_root_no_ext."-all-scores-$index': $!.\n";
 					foreach my $line (@partition) {
 						print {$joined_score_file} $line,"\n";	
 					}	
@@ -956,6 +1014,12 @@ sub run_mdl {
 							printf("    Analyses complete: %".$num_digits."d/%d.\r", $job_number, $total_blocks);
 						}
 
+					}
+					if ($response =~ /REQUEST: (.*)/) {
+						my $file = $1;
+						#send_file({'FILE_PATH' => $file, 'FILE_HANDLE' => $client});	
+						print "",cwd()," '$file'\n";
+						send_file({'FILE_PATH' => $file, 'FILE_HANDLE' => $client});	
 					}
 
 					#print $response;
@@ -1003,8 +1067,6 @@ sub run_mdl {
 																 'GENES' => \@gene_subset,
 																 'BREAK_INFO' => \%break_info});
 
-								print "num genes in this subset: ".scalar(@gene_subset)."\n";
-								
 								print "\n  Writing alignment files for each block... ";
 								#print "  Writing alignment files for each block... ";
 								
@@ -1036,6 +1098,7 @@ sub run_mdl {
 							my $phylip_file_name = $job->{'PHY_FILE_NAME'};
 							my $score_file_name = $job->{'SCORE_FILE_NAME'};
 							my $com_file_name = $job->{'COM_FILE_NAME'};
+							my $align_file_name = $job->{'ALIGN_FILE_NAME'};
 							#(my $num = $score_file_name) =~ s/.*?(\d+)$/$1/;
 							#die "something appears to be off\n" if ($num != $job_number + 1);
 							#print "$phylip_file_name $score_file_name\n";
@@ -1047,12 +1110,17 @@ sub run_mdl {
 								my $pid = fork(); 
 								if ($pid == 0) {
 									#send_file($phylip_file_name, $client);						
-									send_file({'FILE_PATH' => $phylip_file_name, 'FILE_HANDLE' => $client});						
-									#send_file({'FILE_PATH' => $phylip_file_name, 'FILE_HANDLE' => \$client});						
-									unlink($phylip_file_name);
+#									send_file({'FILE_PATH' => $phylip_file_name, 'FILE_HANDLE' => $client});						
+#									#send_file({'FILE_PATH' => $phylip_file_name, 'FILE_HANDLE' => \$client});						
+#									unlink($phylip_file_name);
+#
+#									#print {$client} "NEW: -s '$phylip_file_name' -n '$score_file_name' -p $seed\n";
+									
+									chdir($command_dir);
+									send_file({'FILE_PATH' => $com_file_name, 'FILE_HANDLE' => $client});						
 
-									#print {$client} "NEW: -s '$phylip_file_name' -n '$score_file_name' -p $seed\n";
 									print {$client} "NEW: -n '$com_file_name'\n";
+									#print {$client} "NEW: -n '$com_file_name' -a '$align_file_name'\n";
 									exit(0);
 								}
 							}
@@ -1063,6 +1131,7 @@ sub run_mdl {
 								print {$client} "CHDIR: ".abs_path($command_dir)."\n";
 								#print {$client} "NEW: -s '$phylip_file_name' -n '$score_file_name' -p $seed\n";
 								print {$client} "NEW: -n '$com_file_name'\n";
+								#print {$client} "NEW: -n '$com_file_name' -a '$align_file_name'\n";
 							}
 
 							#print {$client} "NEW: -s '$phylip_file_name' -n '$score_file_name' -p $seed\n";
@@ -1107,8 +1176,10 @@ sub run_mdl {
 			foreach my $index (sort { $a <=> $b } keys %scores) {
 				#my @partition = @{$scores[$index - 1]};
 				my @partition = @{$scores{$index}};
-				open(my $joined_score_file, '>>', $score_dir.$alignment_name."-all-scores-$index") 
-					or die "Could not open '".$score_dir.$alignment_name."-all-scores-$index': $!.\n";
+			#	open(my $joined_score_file, '>>', $score_dir.$alignment_name."-all-scores-$index") 
+			#		or die "Could not open '".$score_dir.$alignment_name."-all-scores-$index': $!.\n";
+				open(my $joined_score_file, '>>', $score_dir.$align_root_no_ext."-all-scores-$index") 
+					or die "Could not open '".$score_dir.$align_root_no_ext."-all-scores-$index': $!.\n";
 				foreach my $line (@partition) {
 					print {$joined_score_file} $line,"\n";	
 				}	
@@ -1143,8 +1214,8 @@ sub run_mdl {
 
 	#chdir($alignment_root);
 	chdir($project_name);
-	parse_input({'GET_ALIGN' => 1});
-	get_informative_chars({'ALIGN' => \%align});
+	#parse_input({'GET_ALIGN' => 1});
+	#get_informative_chars({'ALIGN' => \%align});
 
 	#unlink(glob("$alignment_name-reduced*"));
 
@@ -1154,10 +1225,13 @@ sub run_mdl {
 	
 	# Run each partition defined from the forced break points (if any) through MDL
 	foreach my $partition (1 .. $total) {
-		my $data_file = "$alignment_name-reduced-$partition"."of$total.nex";
-		my $output_name = $partition_dir."$alignment_name-$partition"."of$total.partitions";
+		#my $data_file = "$alignment_name-reduced-$partition"."of$total.nex";
+		my $data_file = "$align_root_no_ext-reduced-$partition"."of$total.nex";
+		#my $output_name = $partition_dir."$alignment_name-$partition"."of$total.partitions";
+		my $output_name = $partition_dir."$align_root_no_ext-$partition"."of$total.partitions";
 		#system("./mdl -ntax $ntax -nchar $nchar{$partition} -scorefile mdl-scores/$alignment_name-all-scores-$partition -nletters $nletters -datafile $data_file -nbestpart $nbestpart -ngroupmax $ngroupmax -o $output_name -ncharbase $min_block_size >/dev/null");
-		system("$mdl -ntax $ntax -nchar $nchar{$partition} -scorefile mdl-scores/$alignment_name-all-scores-$partition -nletters $nletters -datafile $data_file -nbestpart $nbestpart -ngroupmax $ngroupmax -o $output_name -ncharbase $min_block_size >/dev/null");
+		#system("$mdl -ntax $ntax -nchar $nchar{$partition} -scorefile mdl-scores/$alignment_name-all-scores-$partition -nletters $nletters -datafile $data_file -nbestpart $nbestpart -ngroupmax $ngroupmax -o $output_name -ncharbase $min_block_size >/dev/null");
+		system("$mdl -ntax $ntax -nchar $nchar{$partition} -scorefile mdl-scores/$align_root_no_ext-all-scores-$partition -nletters $nletters -datafile $data_file -nbestpart $nbestpart -ngroupmax $ngroupmax -o $output_name -ncharbase $min_block_size >/dev/null");
 	}
 
 	write_partitions({'PARTITIONS' => $total, 
@@ -1197,9 +1271,11 @@ sub run_mdl_block {
 
 	(my $partition = $score_file_name) =~ s/.*-scores-(\d+)-\d+.*/$1/;
 
-	open(my $joined_score_file, '>>', $alignment_name."-all-scores-$partition") 
-		or die "Could not open '".$alignment_name."-all-scores-$partition': $!.\n";
-	flock($joined_score_file, LOCK_EX) or die "Could not lock '$alignment_name-all-scores-$partition': $!.\n";
+#	open(my $joined_score_file, '>>', $alignment_name."-all-scores-$partition") 
+#		or die "Could not open '".$alignment_name."-all-scores-$partition': $!.\n";
+	open(my $joined_score_file, '>>', $align_root_no_ext."-all-scores-$partition") 
+		or die "Could not open '".$align_root_no_ext."-all-scores-$partition': $!.\n";
+	flock($joined_score_file, LOCK_EX) or die "Could not lock '$align_root_no_ext-all-scores-$partition': $!.\n";
 	seek($joined_score_file, 0, SEEK_END);
 
 	open(my $score_file, '<', "RAxML_info.".$score_file_name) 
@@ -1375,7 +1451,8 @@ sub get_block_subset {
 		my $block = $blocks[$block_num];
 
 		my $abs_block_num = ($block_num + $start + 1);
-		my $phylip_file_name = $alignment_name."-$file_number-$abs_block_num.phy";
+		#my $phylip_file_name = $alignment_name."-$file_number-$abs_block_num.phy";
+		my $phylip_file_name = $align_root_no_ext."-$file_number-$abs_block_num.phy";
 
 		my %info;
 		$info{'PHY_FILE_NAME'} = $phylip_file_name;
@@ -1387,7 +1464,8 @@ sub get_block_subset {
 		#$info{'SCORE_FILE_NAME'} =~ s/\.phy$//;
 		$info{'BLOCK_NUM'} = $abs_block_num;
 
-		$info{'ALIGN_FILE_NAME'} = $alignment_name."-reduced-$file_number.nex";
+		#$info{'ALIGN_FILE_NAME'} = $alignment_name."-reduced-$file_number.nex";
+		$info{'ALIGN_FILE_NAME'} = $align_root_no_ext."-reduced-$file_number.nex";
 		($info{'COM_FILE_NAME'} = $info{'SCORE_FILE_NAME'}) =~ s/-scores-/-commands-/;
 
 		push(@genes, \%info);
@@ -1420,7 +1498,8 @@ sub write_partitions {
 	my %reduced_partitions;
 	foreach my $forced_break (1 .. $num_partitions) {
 
-		my $partition_file_name = $partition_dir."$alignment_name-$forced_break"."of$num_partitions.partitions";
+		#my $partition_file_name = $partition_dir."$alignment_name-$forced_break"."of$num_partitions.partitions";
+		my $partition_file_name = $partition_dir."$align_root_no_ext-$forced_break"."of$num_partitions.partitions";
 		open(my $partition_file, '<', $partition_file_name) 
 			or die "Could not open '$partition_file_name': $!.\n";
 		chomp(my @data = <$partition_file>);
@@ -1498,7 +1577,8 @@ sub write_partitions {
 	}
 	print "Alignment has been broken down into ",(scalar(keys %full_partitions))," total partitions.\n";
 
-	open(my $stats_file, '>', $alignment_name."-stats.csv");	
+	#open(my $stats_file, '>', $alignment_name."-stats.csv");	
+	open(my $stats_file, '>', $align_root_no_ext."-stats.csv");	
 	#print "reduced_start, reduced_end, reduced_length, full_start, full_end, full_length, pars_freq\n";
 	print {$stats_file} "reduced_start, reduced_end, full_start, full_end,\n";
 	foreach my $partition (sort { $a <=> $b } keys %stats) {
@@ -1506,7 +1586,8 @@ sub write_partitions {
 		print {$stats_file} "$stats{$partition}->{'REDUCED_START'}, $stats{$partition}->{'REDUCED_END'}, $stats{$partition}->{'FULL_START'}, $stats{$partition}->{'FULL_END'}\n";
 	}
 	close($stats_file);
-	print "Gene statistics output to '$alignment_name-stats.csv'.\n";
+	#print "Gene statistics output to '$alignment_name-stats.csv'.\n";
+	print "Gene statistics output to '$align_root_no_ext-stats.csv'.\n";
 
 	my $free_cpus = get_free_cpus();
 	parallelize({'METHOD' => 'write_partition', 
@@ -1518,13 +1599,16 @@ sub write_partitions {
 
 	chdir($gene_dir);	
 
-	my @gene_file_names = glob("$alignment_name-*-*.nex");
+	#my @gene_file_names = glob("$alignment_name-*-*.nex");
+	my @gene_file_names = glob("$align_root_no_ext-*-*.nex");
 	@gene_file_names = sort { local $a = $a; local $b = $b; $a =~ s/.*-(\d+).nex$/$1/; $b =~ s/.*-(\d+).nex$/$1/; $a <=> $b } @gene_file_names;
 
 	print "Compressing and archiving resulting partitions... ";
-	system("tar czf $alignment_name-genes.tar.gz @gene_file_names --remove-files");
+	#system("tar czf $alignment_name-genes.tar.gz @gene_file_names --remove-files");
+	system("tar czf $align_root_no_ext-genes.tar.gz @gene_file_names --remove-files");
 	#system("mv $alignment_name-genes.tar.gz $alignment_root");
-	system("mv $alignment_name-genes.tar.gz ..");
+	#system("mv $alignment_name-genes.tar.gz ..");
+	system("mv $align_root_no_ext-genes.tar.gz ..");
 	print "done.\n";
 
 }
@@ -1546,7 +1630,8 @@ sub write_partition {
 
 	my $nchar = $end - $start;
 
-	my $file_name = $gene_dir.$alignment_name."-$start-$string_end.nex";
+	#my $file_name = $gene_dir.$alignment_name."-$start-$string_end.nex";
+	my $file_name = $gene_dir.$align_root_no_ext."-$start-$string_end.nex";
 	unlink($file_name) if (-e $file_name);
 
 	sysopen(my $out, $file_name, O_WRONLY|O_NDELAY|O_CREAT)
@@ -1599,13 +1684,9 @@ sub client {
 	#my $server_ip = shift;	
 	my ($opt_name, $server_ip) = @_;	
 
-	chdir($ENV{'HOME'});
+	#chdir($ENV{'HOME'});
+	chdir("/tmp");
 	
-#	my $mdl = check_path_for_exec("mdl");
-#	my $paup = check_path_for_exec("paup");
-	#my $mdl = "/u/n/s/nstenz/private/bin/mdl";
-	#my $paup = "/u/n/s/nstenz/private/bin/paup";
-
 	my $paup = "/tmp/paup";
 
 	my $pgrp = $$;
@@ -1691,7 +1772,22 @@ sub client {
 			#@unlink = ($phylip_file_name, "RAxML_info.".$score_file_name, "RAxML_parsimonyTree.".$score_file_name.".0");
 			@unlink = ($com_file_name, $score_file_name);
 
-			my $cwd = cwd();
+			# Change where alignment is located in command file
+			if ($server_ip ne $ip) {
+
+				open(my $com_file, "<", $com_file_name);
+				my @data = <$com_file>;
+				close($com_file);
+
+				foreach my $line (@data) {
+					$line =~ s/\.\.\///;
+				}
+
+				open($com_file, ">", $com_file_name);
+				print {$com_file} @data;
+				close($com_file);
+			}
+
 			#if (cwd() eq $ENV{HOME}) {
 #			if ($cwd =~ /\Q$ENV{HOME}\E$/) {
 #				system("./parsimonator-SSE3 $args >/dev/null");
@@ -1760,6 +1856,9 @@ sub client {
 		foreach my $pid (@pids) {
 			waitpid($pid, 0);
 		}
+
+		unlink($0, $paup, glob("*-reduced-*.nex"));
+
 		#print "Exiting: '",last_in_pgrp({'PGRP' => $pgrp, 'PID' => $$}),"'\n";
 		#print `ps --ppid $pgrp`;
 		#cleanup
@@ -2002,20 +2101,17 @@ sub clean_up {
 	chdir($project_name);
 #	chdir($alignment_root);
 #	unlink(glob($gene_dir."$alignment_name*"));
-#	#unlink(glob($score_dir."$alignment_name*"));
+	unlink(glob($score_dir."$align_root_no_ext*"));
 #	unlink(glob($phylip_dir."$alignment_name*"));
-#	#unlink(glob($command_dir."$alignment_name*"));
+	unlink(glob($command_dir."$align_root_no_ext*"));
 #	#unlink(glob($partition_dir."$alignment_name*"));
 #	unlink(glob($alignment_name."-unreduced-*"));
 
 	if ($remove_dirs) {
-	#	unlink("mdl");
-	#	unlink("parsimonator-SSE3");
-	#	unlink("get-informative");
 		rmdir($gene_dir);
-		#rmdir($score_dir);
+		rmdir($score_dir);
 		rmdir($phylip_dir);
-		#rmdir($command_dir);
+		rmdir($command_dir);
 		#rmdir($partition_dir);
 	}
 	chdir($current_dir);
@@ -2098,7 +2194,7 @@ sub receive_file {
 
 sub usage {
 
-	return "Usage: alignment-breakdown.pl [-a ALIGNMENT]\n";
+	return "Usage: alignment-breakdown.pl [ALIGNMENT]\n";
 
 }
 
