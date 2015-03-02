@@ -1,8 +1,9 @@
 #!/usr/bin/perl
 use strict;
 use warnings;
-use Cwd;
-use Cwd 'abs_path';
+#use Cwd;
+#use Cwd 'abs_path';
+use Cwd qw(abs_path);
 use Fcntl;
 use Fcntl ':flock';
 use POSIX;
@@ -12,12 +13,12 @@ use IO::Select;
 use IO::Socket;
 use Digest::MD5;
 use Getopt::Long;
-Getopt::Long::Configure(qw(bundling));
 use Time::HiRes 'time';
 
-# prevents printing a warning after 100 recursions which may be possible with large datasets
+# prevents printing a recursion warning which appear with large datasets
 no warnings 'recursion';
 
+# Turn on autoflush
 $|++;
 
 # Pseudo-boolean that stores IP of server
@@ -35,10 +36,6 @@ my $machine_file_path;
 # Where this script is located 
 my $script_path = abs_path($0);
 
-#my $alignment_path;
-#my $alignment_name;
-#my $alignment_root;
-
 # MDL settings
 my $gap_isnt_char;
 my $exclude_gaps;
@@ -50,6 +47,7 @@ my $no_forks;
 my $forced_break;
 my $min_block_size;
 
+# Stores total number of parsimony-informative characters found by script
 my $num_pars_inf_chars;
 
 # How the script was called
@@ -65,7 +63,6 @@ my $paup = check_path_for_exec("paup");
 
 # Read commandline settings
 GetOptions(
-	#"align|a:s"        => \$alignment_path,
 	"block-size|b:i"   => \$min_block_size,
 	"nletters|l:i"     => \$nletters,
 	"nbestpart|p:i"    => \$nbestpart,
@@ -94,35 +91,22 @@ die "The minimum block size can not be greater than or equal to the forced break
 
 print "WARNING: It is not recommended to have forced breakpoints placed so frequently unless you are analyzing a very large dataset.\n" if (defined($forced_break) && $forced_break <= 100);
 
+# Adjust MDL settings depending on user input
 $gap_isnt_char = 1 if (defined($exclude_gaps));
 $nletters++        if (!defined($exclude_gaps));
 
-# Set up directories
-#($alignment_root = $alignment_path) =~ s/(.*\/).*/$1/;
-#($alignment_name = $alignment_path) =~ s/.*\/(.*)\..*/$1/;
-#
-#if ($alignment_root eq $alignment_name) {
-#	$alignment_root = getcwd()."/";
-#	$alignment_name =~ s/(.*)\..*/$1/;
-#}
-#chdir($alignment_root);
-
-#(my $align_name = $alignment_path) =~ s/.*\/(.*)/$1/;
+# Extract name information from input file
 (my $align_root = $align) =~ s/.*\/(.*)/$1/;
 (my $align_root_no_ext = $align) =~ s/.*\/(.*)\..*/$1/;
 
 # Initialize working directory
 mkdir($project_name) || die "Could not create '$project_name'$!.\n" if (!-e $project_name);
 
-#my $alignment_abs_path = abs_path($alignment_path);
-#run_cmd("ln -s $alignment_abs_path $project_name/$align_name") if (! -e "$project_name/$align_name");
-#$alignment_path = $align_name;
-#$alignment_name = $align_name;
 my $align_abs_path = abs_path($align);
+# Remove conditional eventually
 run_cmd("ln -s $align_abs_path $project_name/$align_root") if (! -e "$project_name/$align_root");
-#$alignment_path = $align_name;
-#$alignment_name = $align_name;
 
+# Determine which machines we will run the analyses on
 if (defined($machine_file_path)) {
 	print "Fetching machine names listed in '$machine_file_path'...\n";
 	open(my $machine_file, '<', $machine_file_path);
@@ -133,6 +117,7 @@ if (defined($machine_file_path)) {
 
 chdir($project_name);
 
+# Define and initialize directories
 my $gene_dir      = "mdl-genes/";
 my $score_dir     = "mdl-scores/";
 my $phylip_dir    = "mdl-phylip/";
@@ -150,6 +135,7 @@ $SIG{'INT'} = 'INT_handler';
 # Print the current script settings
 print "\nScript was called as follows:\n$invocation\n";
 
+# Output some more useful information on current settings
 if (defined($forced_break)) {
 	print "\nWill now proceed to breakdown '$align' using a forced breakpoint after ";
 	print "",(($forced_break == 1) ? "every character, " : "every $forced_break characters, "), "and a minimum block size of $min_block_size.\n";
@@ -157,20 +143,17 @@ if (defined($forced_break)) {
 else {
 	print "\nWill now proceed to breakdown '$align' using a minimum block size of $min_block_size.\n";
 }
-
-#print "MDL settings: ",(($gap_as_char) ? "Gaps will be treated as characters, " : "Gaps will not be treated as characters, "); 
-#print "MDL settings: ",(($gap_isnt_char) ? "Gaps will be not treated as characters, " : "Gaps will be treated as characters, "); 
 print "MDL settings: nletters = $nletters, nbestpart = $nbestpart, ngroupmax = $ngroupmax.\n\n";
 
-my %align;
+# Relative site numbers of PI characters
 my @locations;
-my @translated_locations;
-#&parse_input;
-#parse_input({'GET_ALIGN' => 0});
-parse_input();
-#get_informative_chars({'ALIGN' => \%align});
-get_informative_chars({'ALIGN' => \%align});
 
+# Absolute site numbers of PI characters
+my @translated_locations;
+
+#parse_input();
+my %align = parse_input();
+get_informative_chars({'ALIGN' => \%align});
 run_mdl();
 
 sub parse_input {
@@ -178,14 +161,12 @@ sub parse_input {
 	my $select = new IO::Select; 
 	my $pid = fork();
 
-	# By handling the file reading with a fork we save some RAM
+	my %align;
+	# By handling the file reading within a fork we save some RAM
 	if ($pid == 0) {
 		my $TO_PARENT = $pipe->writer();
 
-	#	open(my $alignment_file, '<', $alignment_path) 
-	#		or die "Could not open '$alignment_path': $!\n";
-	#	chomp(my @data = <$alignment_file>);
-	#	close($alignment_file);
+		# Open the input file
 		open(my $align_file, '<', $align_root) 
 			or die "Could not open '$align_root': $!\n";
 		chomp(my @data = <$align_file>);
@@ -203,6 +184,7 @@ sub parse_input {
 			parse_fasta({'ALIGN' => \%align, 'DATA' => \@data});
 		}
 
+		# Send sequence info back to parent
 		foreach my $key (keys %align) {
 			print {$TO_PARENT} "$key||$align{$key}\n";
 		}
@@ -214,6 +196,7 @@ sub parse_input {
 		$select->add($FROM_CHILD);
 	}
 
+	# Reap children
 	while (my @handles = $select->can_read()) {
 		my @handles = $select->can_read();
 		my $handle = shift(@handles);
@@ -227,93 +210,21 @@ sub parse_input {
 		$select->remove($handle);
 		$handle->close;
 	}
-}
 
-# Parses a given Nexus or FASTA file
-# Return:
-#     The alignment store in a hash which has the taxa names as its keys and the
-#     nucleotide data as values
-#sub parse_input {
-#	my $settings = shift;
-#
-#	my $get_align = $settings->{'GET_ALIGN'};
-#
-#	my $pipe = new IO::Pipe;
-#	my $select = new IO::Select; 
-#	my $pid = fork();
-#
-#	# By handling the file reading with a fork we save some RAM
-#	if ($pid == 0) {
-#		my $TO_PARENT = $pipe->writer();
-#
-#		open(my $alignment_file, '<', $alignment_path) 
-#			or die "Could not open '$alignment_path': $!\n";
-#		chomp(my @data = <$alignment_file>);
-#		close($alignment_file);
-#
-#		# Determine whether file is in Nexus or FASTA format, then parse it
-#		if ($data[0] =~ /#NEXUS/i) {
-#			print "Input file '$alignment_path' appears to be a Nexus file.\n";
-#			parse_nexus({'ALIGN' => \%align, 'DATA' => \@data});
-#		}
-#		elsif ($data[0] =~ /^>/) {
-#			print "Input file '$alignment_path' appears to be a FASTA file.\n";
-#			parse_fasta({'ALIGN' => \%align, 'DATA' => \@data});
-#		}
-#
-#		if ($get_align) {
-#			foreach my $key (keys %align) {
-#				print {$TO_PARENT} "$key||$align{$key}\n";
-#			}
-#		}
-#		else {
-#			get_informative_chars({'ALIGN' => \%align});
-#
-#			foreach my $align (@translated_locations) {
-#				print {$TO_PARENT} "$align\n";
-#			}
-#		}
-#
-#		exit(0);
-#	}
-#	else {
-#		my $FROM_CHILD = $pipe->reader();
-#		$select->add($FROM_CHILD);
-#	}
-#
-#	while (my @handles = $select->can_read()) {
-#		my @handles = $select->can_read();
-#		my $handle = shift(@handles);
-#
-#		chomp(my @child_response = <$handle>);
-#		foreach my $response (@child_response) {
-#			if ($get_align) {
-#				my ($key, $value) = split(/\|\|/, $response);
-#				$align{$key} = $value;
-#			}
-#			else {
-#				push(@translated_locations, $response);
-#			}
-#		}
-#		waitpid($pid, 0);
-#		$select->remove($handle);
-#		$handle->close;
-#	}
-#	$num_pars_inf_chars = length($translated_locations[0]);
-#
-#	print "ASDLKJASDLJ: ",$num_pars_inf_chars,"\n";
-#	print "ASDLKJASDLJ: ",scalar(@translated_locations),"\n";
-#}
+	return %align;
+}
 
 # Parses alignment data from a properly formatted Nexus file
 # Parameters:
 #     DATA  - an array reference containing the entire contents of the Nexus file
 #     ALIGN - a reference to a hash which will have the alignment data stored with 
-#             taxa names as its keys and the nucleotide data as values
+#             taxa names as itskeys and the nucleotide data as values
 sub parse_nexus {
 	my $settings = shift;
 
 	my $align = $settings->{'ALIGN'};
+
+	# TODO: Rewrite this, pretty sure it isn't very good
 	
 	my $in_data_block = 0;
 	my $in_data_matrix = 0;
@@ -374,23 +285,15 @@ sub write_nexus_file_reduced {
 
 	my $number = $settings->{'NUM'};
 	my $align = $settings->{'ALIGN'};
-	#my $total = $settings->{'TOTAL'};
 	my $token = $settings->{'TOKEN'};
-	#my $locations = $settings->{'LOCATIONS'};
 
 	# Adjust the partition length of the output segment to prevent overshoot.
-
 	my $forced_break = $forced_break;
-	#if ($forced_break * ($number + 1) > scalar(@{$locations})) {
 	if ($forced_break * ($number + 1) > scalar(@locations)) {
-		#$forced_break = -1 * (($forced_break * ($number + 1)) - scalar(@{$locations}) - $forced_break);
 		$forced_break = -1 * (($forced_break * ($number + 1)) - scalar(@locations) - $forced_break);
 	}
 
 	# Use sysopen and the O_NDELAY flag for faster output.
-	#my $file_name = $alignment_root.$alignment_name."-$token-".($number+1)."of$total.nex";
-	#my $file_name = $alignment_root.$alignment_name."-$token-".($number+1).".nex";
-	#my $file_name = $alignment_name."-$token-".($number+1).".nex";
 	my $file_name = $align_root_no_ext."-$token-".($number+1).".nex";
 	unlink($file_name) if (-e $file_name);
 
@@ -424,40 +327,6 @@ sub write_nexus_file_reduced {
 	close($out);
 }
 
-sub dump_alignment {
-	my $settings = shift;
-
-	my $number = $settings->{'NUM'};
-	my $align = $settings->{'ALIGN'};
-	my $total = $settings->{'TOTAL'};
-	my $token = $settings->{'TOKEN'};
-
-	my $beginning_fraction = $number / $total;
-	my $end_fraction = ($number + 1) / $total;
-
-	my $chromosome_length = length((values %{$align})[0]);
-	
-	my $start = int($chromosome_length * $beginning_fraction);
-	my $end = int($chromosome_length * $end_fraction);
-
-	my $nchar = $end - $start;
-
-	#my $file_name = $alignment_root.$alignment_name."-$token-".($number+1)."of$total";
-	#my $file_name = $alignment_name."-$token-".($number+1)."of$total";
-	my $file_name = $align_root_no_ext."-$token-".($number+1)."of$total";
-	unlink($file_name) if (-e $file_name);
-
-	sysopen(my $out, $file_name, O_WRONLY|O_NDELAY|O_CREAT)
-		or die "Could not open '$file_name': $!.\n";
-
-	my @taxa = sort { $a cmp $b } (keys %{$align});
-
-	foreach my $taxon (@taxa) {
-		print {$out} substr($align->{$taxon}, $start, $nchar),"\n";
-	}
-	close($out);
-}
-
 # Writes a single Nexus file
 # Parameters:
 #     TOTAL - the total number of reduced files which will be output
@@ -473,19 +342,18 @@ sub write_nexus_file {
 	my $total = $settings->{'TOTAL'};
 	my $token = $settings->{'TOKEN'};
 
+	# Determine which proportion to write
 	my $beginning_fraction = $number / $total;
 	my $end_fraction = ($number + 1) / $total;
 
 	my $chromosome_length = length((values %{$align})[0]);
 	
+	# Determine the actual start and end site numbers
 	my $start = int($chromosome_length * $beginning_fraction);
 	my $end = int($chromosome_length * $end_fraction);
 
 	my $nchar = $end - $start;
-	#my $nchar = $end - $start + 1;
 
-	#my $file_name = $alignment_root.$alignment_name."-$token-".($number+1)."of$total.nex";
-	#my $file_name = $alignment_name."-$token-".($number+1)."of$total.nex";
 	my $file_name = $align_root_no_ext."-$token-".($number+1)."of$total.nex";
 	unlink($file_name) if (-e $file_name);
 
@@ -504,112 +372,15 @@ sub write_nexus_file {
 			my $current_char = $start + $i;
 			my $interval = $line_length;
 
-			# This if statement prevents a file from writing characters into it that are 
-			# after its defined endpoint by setting the last interval equal to the distance between
-			# the last character printed and the final character to be included.
-			
+			# Prevent spillover to next block			
 			if ($end < $current_char + $interval) {
 				$interval = $end - $current_char;
 			}
 			print {$out} "  ".$taxon."\t".substr($align->{$taxon}, $start + $i, $interval),"\n";
-
 		}
 	}
 	print {$out} "\n ;\nend;";
 	close($out);
-}
-
-sub write_phylip_file_segment {
-	my $settings = shift;
-
-	#use Time::HiRes qw(time);
-
-	#my $time = time();
-
-	#undef(%align);
-
-	my $number = $settings->{'NUM'};
-	#my $align = $settings->{'ALIGN'};
-	my @genes = @{$settings->{'GENES'}};
-
-	#(my $gene_number = $genes[$number]->{'SCORE_FILE_NAME'}) =~ s/\Q$alignment_name\E-scores-//;
-	(my $gene_number = $genes[$number]->{'SCORE_FILE_NAME'}) =~ s/\Q$align_root_no_ext\E-scores-//;
-	
-	my $start = $genes[$number]->{'GENE_START'};
-	my $end = $genes[$number]->{'GENE_END'};
-
-	#print "num: $number, start: $start, end: $end\n";
-
-	my $nchar = $end - $start + 1;
-
-#	my @locations = @locations[$start - 1 .. $end - 1];
-	my $file_name = $phylip_dir.$genes[$number]->{'PHY_FILE_NAME'};
-	unlink($file_name) if (-e $file_name);
-
-	sysopen(my $out, $file_name, O_WRONLY|O_NDELAY|O_CREAT)
-		or die "Could not open '$file_name': $!.\n";
-
-	#my $line_length = 90000;
-	#my @taxa = sort { $a cmp $b } (keys %{$align});
-
-	#my @align = values %{$align};
-
-	#my $line;
-#	print {$out} "",scalar(keys %align)," $nchar\n";
-#	foreach my $index (0 .. $#taxa) {
-#		my $taxon = $taxa[$index];
-#
-##		print {$out} "$index ";
-##		for (my $i = 0; $i < $nchar; $i++ ) {
-##			print {$out} substr($align->{$taxon}, $locations[$i] - 1, 1);
-##		}
-##		print {$out} "\n";
-#		my $line = "$index ";
-#		#$line .= "$index ";
-#		for (my $i = 0; $i < $nchar; $i++ ) {
-#			$line .= substr($align->{$taxon}, $locations[$i] - 1, 1);
-#			#$line .= substr($align[$index], $locations[$i] - 1, 1);
-#		}
-#		$line .= "\n";
-#		print {$out} $line;
-#	}
-
-#	print {$out} "",scalar(keys %align)," $nchar\n";
-#	foreach my $index (0 .. $#taxa) {
-#		my $taxon = $taxa[$index];
-#
-#		my @line = ("$index ");
-#		#my $line = "$index ";
-#		for (my $i = 0; $i < $nchar; $i++ ) {
-#			#$line .= substr($align->{$taxon}, $locations[$i] - 1, 1);
-#			push(@line, substr($align->{$taxon}, $locations[$i] - 1, 1));
-#		}
-#		#$line .= "\n";
-#		push(@line, "\n");
-#		print {$out} join("", @line);
-#	}
-	#print {$out} $line;
-	#my @locations_subset = @translated_locations[$start - 1 .. $end - 1];
-
-	my $ntaxa = scalar(@translated_locations);
-	
-	my $line;
-	#print {$out} "",scalar(keys %align)," $nchar\n";
-	print {$out} "$ntaxa $nchar\n";
-	#foreach my $index (0 .. $#taxa) {
-	foreach my $index (0 .. $ntaxa - 1) {
-		$line .= "$index ";
-		$line .= substr($translated_locations[$index], $start - 1, $nchar);
-		#$line .= join("", @translated_locations[$start - 1, $end - 1]);
-		$line .= "\n";
-		#print {$out} $line;
-	}
-	#print $line;
-	print {$out} $line;
-
-	close($out);
-
-	#print "secs: ",(time() - $time)," ",scalar(@genes)," ",(scalar(keys %{$genes[$number]})),"\n";
 }
 
 # Determines which sites are parsimony-informative using PAUP's 'cstatus' command
@@ -626,62 +397,56 @@ sub paup_cstatus {
 	my $token = $settings->{'TOKEN'};
 	my $TO_PARENT = $settings->{'TO_PARENT'};
 
-	#my $file_name = $alignment_root.$alignment_name."-".($number+1)."of$total.nex";
-	#my $file_name = $alignment_root.$alignment_name."-$token-".($number+1)."of$total.nex";
-	#my $file_name = $alignment_name."-$token-".($number+1)."of$total.nex";
 	my $file_name = $align_root_no_ext."-$token-".($number+1)."of$total.nex";
-
-	my $paup = check_path_for_exec("paup");
 
 	my $paup_commands = "execute $file_name;\ncstatus full=yes;\n";
 
-	#my $log_path = $alignment_root."log-$alignment_name"."-$token-".($number+1)."of$total.nex";
-	#my $log_path = "log-$alignment_name"."-$token-".($number+1)."of$total.nex";
+	# File name of log which contains PI character status
 	my $log_path = "log-$align_root_no_ext"."-$token-".($number+1)."of$total.nex";
 
+	# Temporarily redirect STDOUT to prevent clutter
 	open(my $std_out, ">&", *STDOUT);
 	close(STDOUT);
 
+	# Run PAUP via a pipe to save time
 	open(my $paup_pipe, "|-", $paup, "-n", "-l", $log_path); 
 	foreach my $command (split("\n", $paup_commands)) {
 		print {$paup_pipe} $command,"\n";
 	}
 	close($paup_pipe);
 
+	# Redirect STDOUT back to terminal
 	open(STDOUT, ">&", $std_out);
 	close($std_out);
 
-	# Read the resulting log with sysread which is faster.
-	
+	# Read the resulting log with sysread (faster) 
 	my $log_contents;
 	open(my $log, "<", $log_path) 
 		or die "Could not open '$log_path': $!.\n";
 	sysread($log, $log_contents, -s $log_path);
 	close($log) and unlink($log_path);
+
 	my @log_lines = split("\n", $log_contents);
 
-	# Use map to create an array of only parsimony-informative sites. 
-
+	# Use map to create an array of only parsimony-informative sites
 	my @filtered_log = grep(/^\d+\s+|(Data matrix)/, @log_lines);
 	my @locations = map { my @line = split(" ", $_);  ($line[2] eq '-' && $line[3] ne 'X') ? $line[0] : () } @filtered_log;
 
+	# Determine total number of characters in the alignment
 	my $total_chars;
 	my $info_line = shift(@filtered_log);
 	if ($info_line =~ /data matrix has \d+ taxa, (\d+) characters/i) { 
 		$total_chars = $1;
 	}
 
-	#printf("%sPID %d has finished and found %9s parsimony informative sites.\n", &timestamp, $$, scalar(@locations));
-	#printf("PID %d finished and found %9s parsimony-informative sites.\n", $$, scalar(@locations));
-
-	# Send the location of the parsimony-informative characters to the parent.
+	# Send the locations of the parsimony-informative characters to the parent.
 	foreach my $location (@locations) {
 		print {$$TO_PARENT} "$number-$total_chars--$location\n";
 	}
 
+	# Cleanup
 	unlink($log_path);
 	unlink($file_name);
-
 }
 
 # Determines which sites are parsimony-informative
@@ -693,6 +458,7 @@ sub get_informative_chars {
 
 	my %align = %{$settings->{'ALIGN'}};
 
+	# Split the original input alignment and write a new Nexus file for each split
 	my $free_cpus = get_free_cpus();
 	parallelize({'METHOD'      => 'write_nexus_file', 
 	             'METHOD_ARGS' => {'ALIGN' => \%align, 
@@ -700,11 +466,13 @@ sub get_informative_chars {
 				 'MAX_FORKS'   => $free_cpus, 
 				 'TOTAL'       => $free_cpus});
 
+	# Run the PAUP cstatus command to determine which characters are parsimony-informative
 	my @raw_locations = parallelize_with_return({'METHOD'      => 'paup_cstatus', 
 	                                             'METHOD_ARGS' => {'TOKEN' => 'unreduced'}, 
 												 'MAX_FORKS'   => $free_cpus, 
 												 'TOTAL'       => $free_cpus});
 
+	# Preparation for determining PIC site numbers
 	my %locations;
 	foreach my $response (@raw_locations) {
 		if ($response =~ /(\d+-\d+)--(\d+)$/) {
@@ -712,11 +480,8 @@ sub get_informative_chars {
 		}
 	}
 
+	# Calculate absolute PIC sites
 	my $start = 0;
-
-	#my @locations; ################################################
-	
-	#foreach my $key (sort keys %locations) {
 	foreach my $key (sort { (local $a = $a) =~ s/(\d+).*/$1/; (local $b = $b) =~ s/(\d+).*/$1/; $a <=> $b } keys %locations) {
 		foreach my $position (@{$locations{$key}}) {
 			push(@locations, $position + $start);	
@@ -726,52 +491,39 @@ sub get_informative_chars {
 		$start += $characters;
 	}
 	undef(%locations);
+
 	$num_pars_inf_chars = scalar(@locations);
-	#print "\n",&timestamp,scalar(@locations)," total parsimony-informative sites found for $chromosome.\n\n";
-	#print "\n", $num_pars_inf_chars, " total parsimony-informative sites found for '$alignment_path'.\n\n";
-#	print "\n", $num_pars_inf_chars, " total parsimony-informative sites found for '$align'.\n\n";
-#
-#	my $total_output_files = 1;
-#	if (defined($forced_break)) {
-#		$total_output_files = ceil($num_pars_inf_chars / $forced_break);
-#	}
-#	else {
-#		$forced_break = $num_pars_inf_chars;
-#	}
-#
-#	parallelize({'METHOD' => 'write_nexus_file_reduced', 'METHOD_ARGS' => {'ALIGN' => \%align, 'TOKEN' => 'reduced', 'LOCATIONS' => \@locations}, 'MAX_FORKS' => $free_cpus, 'TOTAL' => $total_output_files});
 ##	parallelize({'METHOD'      => 'write_nexus_file_reduced', 
 ##	             'METHOD_ARGS' => {'ALIGN' => \%align, 
 ##				                   'TOKEN' => 'reduced'}, 
 ##				 'MAX_FORKS'   => $free_cpus, 
 ##				 'TOTAL'       => $total_output_files});
 
-#	if (!glob("$align_root_no_ext-reduced-*.nex")) {
-		print "\n", $num_pars_inf_chars, " total parsimony-informative sites found for '$align'.\n\n";
+	print "\n", $num_pars_inf_chars, " total parsimony-informative sites found for '$align'.\n\n";
 
-		my $total_output_files = 1;
-		if (defined($forced_break)) {
-			$total_output_files = ceil($num_pars_inf_chars / $forced_break);
-		}
-		else {
-			$forced_break = $num_pars_inf_chars;
-		}
+	my $total_output_files = 1;
+	if (defined($forced_break)) {
+		$total_output_files = ceil($num_pars_inf_chars / $forced_break);
+	}
+	else {
+		$forced_break = $num_pars_inf_chars;
+	}
 
-		parallelize({'METHOD' => 'write_nexus_file_reduced', 'METHOD_ARGS' => {'ALIGN' => \%align, 'TOKEN' => 'reduced', 'LOCATIONS' => \@locations}, 'MAX_FORKS' => $free_cpus, 'TOTAL' => $total_output_files});
-#	}
+	# Output the reduced Nexus files containing only PICs
+	parallelize({'METHOD' => 'write_nexus_file_reduced', 
+	             'METHOD_ARGS' => {'ALIGN' => \%align, 
+				                   'TOKEN' => 'reduced', 
+								   'LOCATIONS' => \@locations}, 
+                 'MAX_FORKS' => $free_cpus, 
+				 'TOTAL' => $total_output_files});
 }
 
 # Runs the actual MDL analyses required to breakdown the given alignment
 sub run_mdl {
-	#my $settings = shift;
-
-	#print "\n", $num_pars_inf_chars, " total parsimony-informative sites found for '$alignment_path'.\n\n";
-	#print "\n", $num_pars_inf_chars, " total parsimony-informative sites found for '$align'.\n\n";
-
 	my @genes;
-	#my %blocks_per_break;
 	my %break_info;
 
+	# Determine how many files the reduced sites were split into
 	my $total_output_files = 1;
 	if (defined($forced_break)) {
 		$total_output_files = ceil($num_pars_inf_chars / $forced_break);
@@ -792,50 +544,23 @@ sub run_mdl {
 		}
 		$nchar{$count} = $align_length;
 		
-		#my $input_file_name = $alignment_name."-reduced-".$count."of"."$total.nex";
 		my $input_file_name = $align_root_no_ext."-reduced-".$count."of"."$total.nex";
 
 		my $last_gene_size = $align_length % $min_block_size;
 		my $total_genes = ($align_length - $last_gene_size) / $min_block_size;
 		$total_genes++ if ($last_gene_size);
 
-	#	my @blocks = get_mdl_block_indices({'TOTAL_GENES'  => $total_genes, 
-	#									    'FILE_NUMBER'  => $count, 
-	#	                                    'ALIGN_LENGTH' => $align_length});
-#		$blocks_per_break{$count} = scalar(get_mdl_block_indices({'TOTAL_GENES'  => $total_genes, 
-#		   				            'FILE_NUMBER'  => $count, 
-#		                            'ALIGN_LENGTH' => $align_length}));
-
-	#	my @blocks = get_block_subset({'TOTAL_GENES'  => $total_genes, 
-	#									    'FILE_NUMBER'  => $count, 
-	#										'START' => 0,
-	#										'SIZE' => 1000,
-	#	                                    'ALIGN_LENGTH' => $align_length});
 		my $total_blocks = get_num_blocks({'TOTAL_GENES'  => $total_genes, 
-										    'FILE_NUMBER'  => $count, 
-		                                    'ALIGN_LENGTH' => $align_length});
+										   'FILE_NUMBER'  => $count, 
+		                                   'ALIGN_LENGTH' => $align_length});
 
 		$break_info{$count}->{'TOTAL_GENES'} = $total_genes;
 		$break_info{$count}->{'ALIGN_LENGTH'} = $align_length;
 		$break_info{$count}->{'TOTAL_BLOCKS'} = $total_blocks;
 
-#		die;
-
-#		foreach my $block_num (0 .. $#blocks) {
-#			my $block = $blocks[$block_num];
-#
-#			my $phylip_file_name = $alignment_name."-$count-".($block_num + 1).".phy";
-#			$genes{$block_num}->{'PHY_FILE_NAME'} = $phylip_file_name;
-#			$genes{$block_num}->{'GENE_START'} = (keys %{$block})[0];
-#			$genes{$block_num}->{'GENE_END'} = (values %{$block})[0];
-#			$genes{$block_num}->{'PARTITION'} = $count;
-#			($genes{$block_num}->{'SCORE_FILE_NAME'} = $genes{$block_num}->{'PHY_FILE_NAME'}) =~ s/-\Q$count\E/-scores-$count/;
-#			$genes{$block_num}->{'SCORE_FILE_NAME'} =~ s/\.phy$//;
-#		}
 		$count++;
 	}
 
-	#chdir($alignment_root);
 	chdir($project_name);
 
 	# Remove any files that may remain from previous runs
@@ -848,7 +573,7 @@ sub run_mdl {
 
 	print "Parsimony analyses will be performed on $total_blocks different blocks.\n";
 
-#	print "Parsimony analyses will be performed on ".scalar(keys %genes)." different blocks.\n";
+	# Print a warning if this analysis is going to take a while
 	if ($total_blocks > 1000000) {
 		print "This analysis will require running more than 1 million parsimony calculations to finish. Okay to continue? [y/n]: ";
 		while (chomp(my $input = <STDIN>)) {
@@ -860,9 +585,8 @@ sub run_mdl {
 	}
 	print "\n";
 
-	#chomp(my $server_ip = `wget -qO- ifconfig.me/ip`); # Returns the ip address of the computer
-	#chomp(my $server_ip = `curl http://ipecho.net/plain; echo`); # Returns the ip address of the computer
-	chomp(my $server_ip = `wget -qO- ipecho.net/plain`); # Returns the ip address of the computer
+	# TODO: more reliable way to get external IP
+	chomp(my $server_ip = `wget -qO- ipecho.net/plain`); # Returns the external IP address of this computer
 	die "Could not establish the IP address for the server.\n" if (!defined $server_ip);
 
 	# Initialize a server
@@ -877,45 +601,31 @@ sub run_mdl {
 
 	print "Job server successfully created.\n";
 
-	# If a machine file was defined read it in and get the machine names
-
-#	#my @machines;
-#	if (defined($machine_file_path)) {
-#		print "  Fetching machine names listed in '$machine_file_path'...\n";
-#		open(my $machine_file, '<', $machine_file_path);
-#		chomp(@machines = <$machine_file>);
-#		close($machine_file);
-#		print "    $_\n" foreach (@machines);
-#	}
-
-	#chdir($phylip_dir);
-
+	# Determine server hostname and add to machines if none were specified by the user
 	chomp(my $server_hostname = `hostname`);
 	push(@machines, $server_hostname) if (scalar(@machines) == 0);
 
 	my @pids;
 	foreach my $machine (@machines) {
+
+		# Fork and create a client on the given machine
 		my $pid = fork();	
 		if ($pid == 0) {
 			(my $script_name = $script_path) =~ s/.*\///;
-#			if ($machine ne $server_hostname) {
-			#	system("scp", "-q", $script_path, $machine.":");
-			#	system("scp", "-q", $mdl , $machine.":");
-			#	system("scp", "-q", $paup , $machine.":");
-			#	exec("ssh", $machine, "perl", "./".$script_name, "--client=$server_ip");
-				system("scp", "-q", $script_path, $machine.":/tmp");
-				system("scp", "-q", $paup , $machine.":/tmp");
 
-				if ($machine ne $server_hostname) {
-					system("scp -q *-reduced-* $machine:/tmp");
-				}
+			# Send this script to the machine
+			system("scp", "-q", $script_path, $machine.":/tmp");
 
-				exec("ssh", $machine, "perl", "/tmp/".$script_name, "--client=$server_ip");
-#			}
-#			else {
-#				chdir($alignment_root);
-#				exec("perl", abs_path($script_path), "--client=$server_ip");
-#			}
+			# Send PAUP executable to the machine
+			system("scp", "-q", $paup , $machine.":/tmp");
+
+			# Send reduced alignments to the machine
+			if ($machine ne $server_hostname) {
+				system("scp -q *-reduced-* $machine:/tmp");
+			}
+
+			exec("ssh", $machine, "perl", "/tmp/".$script_name, "--client=$server_ip");
+
 			exit(0);
 		}
 		else {
@@ -925,53 +635,42 @@ sub run_mdl {
 
 	my $select = IO::Select->new($sock);
 
+	# Stores which job is next in queue 
 	my $job_number = 0;
+
+	# Number of open connections to a client
 	my $total_connections;
-	#my $total_connections = 5;
+
+	# Number of connections server has closed
 	my $closed_connections = 0;
+
+	# Minimum number of connections server should expect
 	my $starting_connections = scalar(@machines);
-	
-#		my %actions = ( 'NEW' => \&send_new,  
-#						'RECEIVE' => \&receive_file,
+
+	# Stores parsimiony score iformation for blocks
 	my %scores;
-	#my @scores;
-	#my @gene_subset;
-	#my @genes = get_submit_file_contents_flat({'GENES' => \%genes});
-	#my $total_blocks = scalar(@genes);
 	my $time = time();
 
-	my $subset_count = 0;
-	#my $subset_size = 5000;
-	my $subset_size = 3000;
-	#my $subset_size = 100;
-	#my $subset_size = get_free_cpus();
+	# Jobs are delegated in $subset_size queues
 	my @gene_subset;
-#		my @gene_subset = get_block_subset({'TOTAL_GENES'  => $break_info{1}->{'TOTAL_GENES'}, 
-#										    'FILE_NUMBER'  => 1, 
-#											'START' => 0,
-#											'SIZE' => $subset_size,
-#		                                    'ALIGN_LENGTH' => $break_info{1}->{'ALIGN_LENGTH'}});
+	my $subset_count = 0;
+	my $subset_size = 3000;
 
-	#while ($job_number < scalar(@genes)) {
-	#while (!defined($total_connections) || $closed_connections < $total_connections) {
-	#while (!defined($total_connections) || $closed_connections != $total_connections) {
+	# Begin the server's job distribution
 	while ((!defined($total_connections) || $closed_connections != $total_connections) || $total_connections < $starting_connections) {
-	#while ($closed_connections < $total_connections) {
-		#my @clients = $select->can_read(1);
 
+		# Contains handles to clients which have sent information to the server
 		my @clients = $select->can_read(0);
 
+		# To prevent %scores from becoming too large, we dump it after every $subset_size calculations
 		my $total_scores = 0;
 		foreach my $key (keys %scores) {
 			$total_scores += scalar(@{$scores{$key}});
+
 			if ($total_scores >= $subset_size) {
-				#print "Writing scores to file.\n";
-				#foreach my $index (1 .. scalar(@{$scores{$key}})) {
 				foreach my $index (sort { $a <=> $b } keys %scores) {
-					#my @partition = @{$scores[$index - 1]};
+
 					my @partition = @{$scores{$index}};
-				#	open(my $joined_score_file, '>>', $score_dir.$alignment_name."-all-scores-$index") 
-				#		or die "Could not open '".$score_dir.$alignment_name."-all-scores-$index': $!.\n";
 					open(my $joined_score_file, '>>', $score_dir.$align_root_no_ext."-all-scores-$index") 
 						or die "Could not open '".$score_dir.$align_root_no_ext."-all-scores-$index': $!.\n";
 					foreach my $line (@partition) {
@@ -983,71 +682,48 @@ sub run_mdl {
 			}
 		}
 
+		# Handle each ready client individually
 		CLIENT: foreach my $client (@clients) {
+
+			# Client requesting new connection
 			if ($client == $sock) {
 				$total_connections++;
 				$select->add($sock->accept());
 			}
 			else {
 
+				# Get client's message
 				my $response = <$client>;
 				
 				next if (not defined($response)); # a response should never actually be undefined
 
-					if ($response =~ /RESULT: (.*):(\S+)/) {
-						#print $response;
-						#my $file_name = $1;
-						#receive_file($file_name, $client);
+				# Client has finished a job
+				if ($response =~ /RESULT: (.*):(\S+)/) {
 
-						my $file_name = $1;
-						my $score = $2;
+					my ($file_name, $score) = ($1, $2);
+					(my $partition = $file_name) =~ s/.*-scores-(\d+)-\d+.*/$1/;
+					(my $tree_number = $file_name) =~ s/.*-scores-\d+-(\d+).*/$1/;
 
-						(my $partition = $file_name) =~ s/.*-scores-(\d+)-\d+.*/$1/;
-						(my $tree_number = $file_name) =~ s/.*-scores-\d+-(\d+).*/$1/;
-
-						#push(@scores, {$partition => "$tree_number : $score"});
-						#push(@{$scores[$partition - 1]}, "$tree_number : $score");
-						push(@{$scores{$partition}}, "$tree_number : $score");
-						if ($job_number % 100 == 0 || $job_number == $total_blocks) {
-							my $num_digits = get_num_digits({'NUMBER' => $total_blocks});
-							#printf("    Analyses complete: %".$num_digits."d/%d.\n", $job_number, $total_blocks);
-							printf("    Analyses complete: %".$num_digits."d/%d.\r", $job_number, $total_blocks);
-						}
-
-					}
-					if ($response =~ /REQUEST: (.*)/) {
-						my $file = $1;
-						#send_file({'FILE_PATH' => $file, 'FILE_HANDLE' => $client});	
-						print "",cwd()," '$file'\n";
-						send_file({'FILE_PATH' => $file, 'FILE_HANDLE' => $client});	
+					push(@{$scores{$partition}}, "$tree_number : $score");
+					if ($job_number % 100 == 0 || $job_number == $total_blocks) {
+						my $num_digits = get_num_digits({'NUMBER' => $total_blocks});
+						printf("    Analyses complete: %".$num_digits."d/%d.\r", $job_number, $total_blocks);
 					}
 
-					#print $response;
+				}
+
+				# Client wants a new job
 					if ($response =~ /NEW: (.*)/) {
 
 						my $client_ip = $1;
+
+						# Check that we have jobs to delegate
 						if ($job_number < $total_blocks) {
-							#print "Sending new job.\n";
 
-							my $seed = int(rand(9999)) + 1;
-							#my $seed = 43100;
-						#	my $phylip_file_name = $genes[$job_number]->{'PHY_FILE_NAME'};
-						#	my $score_file_name = $genes[$job_number]->{'SCORE_FILE_NAME'};
-
-						#	if ($client_ip ne $server_ip) {
-						#		#send_file($phylip_file_name, $client);						
-						#		send_file({'FILE_PATH' => $phylip_file_name, 'FILE_HANDLE' => $client});						
-						#		#send_file({'FILE_PATH' => $phylip_file_name, 'FILE_HANDLE' => \$client});						
-						#		unlink($phylip_file_name);
-						#	}
-						#	else {
-						#		print {$client} "CHDIR: $phylip_dir\n";
-						#	}
-
-						#	print {$client} "NEW: -s '$phylip_file_name' -n '$score_file_name' -p $seed\n";
-
-							#if (floor(($job_number + 1) / $subset_size) == $subset_count) {
+							# Check if our current queue has jobs in it
 							if (scalar(@gene_subset) == 0) {
+
+								# Determine which reduced output file we are in
 								my $sum;
 								my $break_number;
 								foreach my $key (sort { $a <=> $b } keys %break_info) {
@@ -1059,82 +735,58 @@ sub run_mdl {
 								}
 
 								my $start = $job_number;
-								#$start++ if ($subset_count > 0);
 
+								# Get a new gene subset
 								@gene_subset = get_block_subset({'FILE_NUMBER'  => $break_number, 
 																 'START' => $start,
 																 'SIZE' => $subset_size,
 																 'GENES' => \@gene_subset,
 																 'BREAK_INFO' => \%break_info});
 
-								print "\n  Writing alignment files for each block... ";
-								#print "  Writing alignment files for each block... ";
+								# Write the command files required to run each job
+								print "\n  Writing command files for each block... ";
 								
-								#my $total = scalar(@gene_subset);
-
 								my $time = time();
 								my $free_cpus = get_free_cpus();
 								parallelize({'METHOD'      => 'write_mdl_command', 
 											 'METHOD_ARGS' => {'GENES' => \@gene_subset}, 
 											 'MAX_FORKS'   => $free_cpus, 
-											 #'MAX_FORKS'   => floor($free_cpus * 1.5), 
-											 #'MAX_FORKS'   => 1, 
 											 'TOTAL'       => scalar(@gene_subset)});
-											 #'TOTAL'       => $subset_length});
-											 #'TOTAL'       => $total});
-								#print "done.\n";
+
 								print "done. ($start - ".($start + scalar(@gene_subset) - 1).")\n";
 								print "  Total execution time: ", secs_to_readable({'TIME' => time() - $time}), "\n";
 
 								$subset_count++;
-
 							}
 							
-							#my $phylip_file_name = $genes[($job_number - ($subset_size * ($subset_count - 1)))]->{'PHY_FILE_NAME'};
-							#my $score_file_name = $genes[($job_number - ($subset_size * ($subset_count - 1)))]->{'SCORE_FILE_NAME'};
-							#my $phylip_file_name = $gene_subset[($job_number - ($subset_size * ($subset_count - 1)))]->{'PHY_FILE_NAME'};
-							#my $score_file_name = $gene_subset[($job_number - ($subset_size * ($subset_count - 1)))]->{'SCORE_FILE_NAME'};
 							my $job = shift(@gene_subset);
-							my $phylip_file_name = $job->{'PHY_FILE_NAME'};
+							#my $phylip_file_name = $job->{'PHY_FILE_NAME'};
 							my $score_file_name = $job->{'SCORE_FILE_NAME'};
 							my $com_file_name = $job->{'COM_FILE_NAME'};
 							my $align_file_name = $job->{'ALIGN_FILE_NAME'};
-							#(my $num = $score_file_name) =~ s/.*?(\d+)$/$1/;
-							#die "something appears to be off\n" if ($num != $job_number + 1);
-							#print "$phylip_file_name $score_file_name\n";
 
+							# TODO: send actual commands instead of file to save time
+							# Check whether the client is remote or local, send it needed files if remote
 							if ($client_ip ne $server_ip) {
 
 								$SIG{CHLD} = 'IGNORE';
 
+								# Fork to perform the file transfer and prevent stalling the server
 								my $pid = fork(); 
 								if ($pid == 0) {
-									#send_file($phylip_file_name, $client);						
-#									send_file({'FILE_PATH' => $phylip_file_name, 'FILE_HANDLE' => $client});						
-#									#send_file({'FILE_PATH' => $phylip_file_name, 'FILE_HANDLE' => \$client});						
-#									unlink($phylip_file_name);
-#
-#									#print {$client} "NEW: -s '$phylip_file_name' -n '$score_file_name' -p $seed\n";
 									
 									chdir($command_dir);
 									send_file({'FILE_PATH' => $com_file_name, 'FILE_HANDLE' => $client});						
 
 									print {$client} "NEW: -n '$com_file_name'\n";
-									#print {$client} "NEW: -n '$com_file_name' -a '$align_file_name'\n";
 									exit(0);
 								}
 							}
 							else {
-								#print {$client} "CHDIR: $phylip_dir\n";
-								#print {$client} "CHDIR: $command_dir\n";
-								#print {$client} "CHDIR: $project_name/$command_dir\n";
 								print {$client} "CHDIR: ".abs_path($command_dir)."\n";
-								#print {$client} "NEW: -s '$phylip_file_name' -n '$score_file_name' -p $seed\n";
 								print {$client} "NEW: -n '$com_file_name'\n";
-								#print {$client} "NEW: -n '$com_file_name' -a '$align_file_name'\n";
 							}
 
-							#print {$client} "NEW: -s '$phylip_file_name' -n '$score_file_name' -p $seed\n";
 							$job_number++;
 						}
 						else {
@@ -1142,42 +794,19 @@ sub run_mdl {
 							$select->remove($client);
 							$client->close();
 							$closed_connections++;
-							#print "  Closed a connection on $client_ip.\n";
 							next CLIENT;
 						}
 					}
 
-				#}#####################333
-				#$actions{$method}->(\%method_args);
 				}
 
 			}
 		}
 
-#		if (scalar(@scores) > 0) {
-#			my $count = 0;
-#			print "\nWriting scores from ".scalar(@scores)." partitions to file.\n";
-#			foreach my $index (1 .. scalar(@scores)) {
-#				my @partition = @{$scores[$index - 1]};
-#				open(my $joined_score_file, '>>', $score_dir.$alignment_name."-all-scores-$index") 
-#					or die "Could not open '".$score_dir.$alignment_name."-all-scores-$index': $!.\n";
-#				foreach my $line (@partition) {
-#					print {$joined_score_file} $line,"\n";	
-#					$count++;
-#				}	
-#				close($joined_score_file);
-#			}
-#			undef(@scores);
-#			print "$count scores written to file.\n";
-#		}
+		# Output any block scores that haven't been dumped yet
 		if (scalar(keys %scores) > 0) {
-			#print "\nWriting scores to file.\n";
-			#foreach my $index (1 .. scalar(@{$scores{$key}})) {
 			foreach my $index (sort { $a <=> $b } keys %scores) {
-				#my @partition = @{$scores[$index - 1]};
 				my @partition = @{$scores{$index}};
-			#	open(my $joined_score_file, '>>', $score_dir.$alignment_name."-all-scores-$index") 
-			#		or die "Could not open '".$score_dir.$alignment_name."-all-scores-$index': $!.\n";
 				open(my $joined_score_file, '>>', $score_dir.$align_root_no_ext."-all-scores-$index") 
 					or die "Could not open '".$score_dir.$align_root_no_ext."-all-scores-$index': $!.\n";
 				foreach my $line (@partition) {
@@ -1186,12 +815,8 @@ sub run_mdl {
 				close($joined_score_file);
 			}
 			undef(%scores);
-			#print "$count scores written to file.\n";
 		}
 
-#		foreach my $pid (@pids) {
-#			waitpid($pid, 0);
-#		}
 		print "\n  All connections closed.\n\n";
 		print "Total execution time: ", secs_to_readable({'TIME' => time() - $time}), "\n\n";
 
@@ -1240,66 +865,66 @@ sub run_mdl {
 	clean_up({'DIRS' => 1});
 }
 
-sub run_mdl_block {
-	my $settings = shift;
-
-	my $number = $settings->{'NUM'};
-	#my %genes = %{$settings->{'GENES'}};
-	my @genes = @{$settings->{'GENES'}};
-	
-	#$number = 27630;
-
-	my $phylip_file_name = "../mdl-phylip/".$genes[$number]->{'PHY_FILE_NAME'};
-	my $score_file_name = $genes[$number]->{'SCORE_FILE_NAME'};
-
-
-	write_phylip_file_segment({'NUM'   => $number,
-							   'ALIGN' => \%align, 
-						       'GENES' => \@genes}); 
-						       #'GENES' => \%genes}); 
-
-	chdir($score_dir);
-
-	my $seed = int(rand(100000));
-	system("../parsimonator-SSE3 -s '$phylip_file_name' -n '$score_file_name' -p $seed >/dev/null");
-
-	
-#	unlink($phylip_file_name);
-#	unlink("RAxML_parsimonyTree.".$score_file_name.".0");
-	#unlink($phylip_file_name) if $number != 27630;
-	#unlink("RAxML_parsimonyTree.".$score_file_name.".0") if $number != 27630;
-
-	(my $partition = $score_file_name) =~ s/.*-scores-(\d+)-\d+.*/$1/;
-
-#	open(my $joined_score_file, '>>', $alignment_name."-all-scores-$partition") 
-#		or die "Could not open '".$alignment_name."-all-scores-$partition': $!.\n";
-	open(my $joined_score_file, '>>', $align_root_no_ext."-all-scores-$partition") 
-		or die "Could not open '".$align_root_no_ext."-all-scores-$partition': $!.\n";
-	flock($joined_score_file, LOCK_EX) or die "Could not lock '$align_root_no_ext-all-scores-$partition': $!.\n";
-	seek($joined_score_file, 0, SEEK_END);
-
-	open(my $score_file, '<', "RAxML_info.".$score_file_name) 
-		or die "Could not open 'RAxML_info.$score_file_name': $!.\n";
-	chomp(my @data = <$score_file>);
-	close($score_file);
-
-	(my $score = pop(@data)) =~ s/.*with length (\d+) computed.*/$1/;
-	(my $tree_number = $score_file_name) =~ s/.*-scores-\d+-(\d+).*/$1/;
-
-	print {$joined_score_file} "$tree_number : $score\n";
-
-	close($joined_score_file);
-
-	#unlink("RAxML_info.".$score_file_name);
-	#unlink("RAxML_info.".$score_file_name) if $number != 27630;
-
-	$number++;
-	if ($number % 1000 == 0 || $number == scalar(@genes)) {
-		my $num_digits = get_num_digits({'NUMBER' => scalar(@genes)});
-		printf("  Analyses complete: %".$num_digits."d/%d.\n", $number, scalar(@genes));
-	}
-
-}
+#sub run_mdl_block {
+#	my $settings = shift;
+#
+#	my $number = $settings->{'NUM'};
+#	#my %genes = %{$settings->{'GENES'}};
+#	my @genes = @{$settings->{'GENES'}};
+#	
+#	#$number = 27630;
+#
+#	my $phylip_file_name = "../mdl-phylip/".$genes[$number]->{'PHY_FILE_NAME'};
+#	my $score_file_name = $genes[$number]->{'SCORE_FILE_NAME'};
+#
+#
+#	write_phylip_file_segment({'NUM'   => $number,
+#							   'ALIGN' => \%align, 
+#						       'GENES' => \@genes}); 
+#						       #'GENES' => \%genes}); 
+#
+#	chdir($score_dir);
+#
+#	my $seed = int(rand(100000));
+#	system("../parsimonator-SSE3 -s '$phylip_file_name' -n '$score_file_name' -p $seed >/dev/null");
+#
+#	
+##	unlink($phylip_file_name);
+##	unlink("RAxML_parsimonyTree.".$score_file_name.".0");
+#	#unlink($phylip_file_name) if $number != 27630;
+#	#unlink("RAxML_parsimonyTree.".$score_file_name.".0") if $number != 27630;
+#
+#	(my $partition = $score_file_name) =~ s/.*-scores-(\d+)-\d+.*/$1/;
+#
+##	open(my $joined_score_file, '>>', $alignment_name."-all-scores-$partition") 
+##		or die "Could not open '".$alignment_name."-all-scores-$partition': $!.\n";
+#	open(my $joined_score_file, '>>', $align_root_no_ext."-all-scores-$partition") 
+#		or die "Could not open '".$align_root_no_ext."-all-scores-$partition': $!.\n";
+#	flock($joined_score_file, LOCK_EX) or die "Could not lock '$align_root_no_ext-all-scores-$partition': $!.\n";
+#	seek($joined_score_file, 0, SEEK_END);
+#
+#	open(my $score_file, '<', "RAxML_info.".$score_file_name) 
+#		or die "Could not open 'RAxML_info.$score_file_name': $!.\n";
+#	chomp(my @data = <$score_file>);
+#	close($score_file);
+#
+#	(my $score = pop(@data)) =~ s/.*with length (\d+) computed.*/$1/;
+#	(my $tree_number = $score_file_name) =~ s/.*-scores-\d+-(\d+).*/$1/;
+#
+#	print {$joined_score_file} "$tree_number : $score\n";
+#
+#	close($joined_score_file);
+#
+#	#unlink("RAxML_info.".$score_file_name);
+#	#unlink("RAxML_info.".$score_file_name) if $number != 27630;
+#
+#	$number++;
+#	if ($number % 1000 == 0 || $number == scalar(@genes)) {
+#		my $num_digits = get_num_digits({'NUMBER' => scalar(@genes)});
+#		printf("  Analyses complete: %".$num_digits."d/%d.\n", $number, scalar(@genes));
+#	}
+#
+#}
 
 sub write_mdl_command {
 	my $settings = shift;
@@ -1697,23 +1322,16 @@ sub client {
 	chomp(my $ip = `wget -qO- ipecho.net/plain`); 
 	die "Could not establish an IP address for host.\n" if (not defined $ip);
 
-	print "client created on $ip ($ip).\n";
+	# Spawn more clients
 
 	my @pids;
 	my $total_forks = get_free_cpus();
-	#my $total_forks = 1;
-	#$total_forks = floor($total_forks * 1.5);
-	#print "will spawn $total_forks clients.\n";
-	#my $total_forks = 1;
 	my $fork_id = 1;
 	if ($total_forks > 1) {
 		foreach my $fork (1 .. $total_forks - 1) {
 
 			my $pid = fork();
 			if ($pid == 0) {
-			#if ($pid != 0) {
-				#setpgrp($pid, $pgrp);
-				#setpgrp(0, $pgrp);
 				last;
 			}
 			else {
@@ -1817,34 +1435,16 @@ sub client {
 			open(STDOUT, ">&", $std_out);
 			close($std_out);
 
-			#unlink($phylip_file_name);
-			#unlink("RAxML_parsimonyTree.".$score_file_name.".0");
-
-			#(my $partition = $score_file_name) =~ s/.*-scores-(\d+)-\d+.*/$1/;
 			(my $partition = $com_file_name) =~ s/.*-commands-(\d+)-\d+.*/$1/;
 
-		#	open(my $score_file, '<', "RAxML_info.".$score_file_name) 
-		#		or die "Could not open 'RAxML_info.$score_file_name': $!.\n";
 			open(my $score_file, '<', $score_file_name) 
 				or die "Could not open '$score_file_name': $!.\n";
 			chomp(my @data = <$score_file>);
 			close($score_file);
 
-			#(my $score = pop(@data)) =~ s/.*with length (\d+) computed.*/$1/;
 			(my $score = pop(@data)) =~ s/1\s+(\d+)/$1/;
-			#(my $tree_number = $score_file_name) =~ s/.*-scores-\d+-(\d+).*/$1/;
-
-			#print {$joined_score_file} "$tree_number : $score\n";
-			#print {$sock} "RESULT: $score_file_name:$score\n";
-
-			#unlink("RAxML_info.".$score_file_name);
 			unlink(@unlink);
 
-			#sleep(1);
-			#print {$sock} "RESULT: $score_file_name:$score\n";
-			#print {$sock} "NEW: $ip\n";
-
-			#print "\nRESULT: $score_file_name:$score\n";
 			print {$sock} "RESULT: $score_file_name:$score || NEW: $ip\n";
 		}
 		elsif ($response eq "HANGUP") {
@@ -1878,7 +1478,6 @@ sub parallelize {
 	#print "Running '$method' $total total times with $max_forks forks.\n";
 
 	my %actions = ( 'run_mdl_block'             => \&run_mdl_block,
-					'dump_alignment'            => \&dump_alignment,
 					'write_partition'           => \&write_partition,
 					'write_nexus_file'          => \&write_nexus_file,
 					'write_mdl_command'         => \&write_mdl_command,
@@ -2193,9 +1792,7 @@ sub receive_file {
 }
 
 sub usage {
-
-	return "Usage: alignment-breakdown.pl [ALIGNMENT]\n";
-
+	return "Usage: alignment-breakdown.pl [ALIGNMENT] [-b MINIMUM BLOCK LENGTH\n";
 }
 
 sub run_cmd {
@@ -2227,9 +1824,7 @@ sub logger {
 }
 
 sub help {
-
 	return "alignment-breakdown.pl help\n";
-
 }
 
 sub check_path_for_exec {
