@@ -9,7 +9,6 @@ use IO::Pipe;
 use IO::Handle;
 use IO::Select;
 use IO::Socket;
-use Digest::MD5;
 use Getopt::Long;
 use Time::HiRes 'time';
 
@@ -18,9 +17,6 @@ no warnings 'recursion';
 
 # Turn on autoflush
 $|++;
-
-# Pseudo-boolean that stores IP of server
-my $client;
 
 # Server port
 my $port = 10001;
@@ -41,6 +37,7 @@ my $nletters = 4;
 my $nbestpart = 1;
 my $ngroupmax = 10000;
 
+# General script settings
 my $no_forks;
 my $forced_break;
 my $min_block_size;
@@ -98,6 +95,7 @@ $nletters++        if (!defined($exclude_gaps));
 (my $align_root_no_ext = $align) =~ s/.*\/(.*)\..*/$1/;
 
 # Initialize working directory
+# Remove conditional eventually
 mkdir($project_name) || die "Could not create '$project_name'$!.\n" if (!-e $project_name);
 
 my $align_abs_path = abs_path($align);
@@ -1114,8 +1112,10 @@ sub write_partitions {
 	@gene_file_names = sort { local $a = $a; local $b = $b; $a =~ s/.*-(\d+).nex$/$1/; $b =~ s/.*-(\d+).nex$/$1/; $a <=> $b } @gene_file_names;
 
 	print "Compressing and archiving resulting partitions... ";
-	system("tar czf $align_root_no_ext-genes.tar.gz @gene_file_names --remove-files");
-	system("mv $align_root_no_ext-genes.tar.gz ..");
+#	system("tar czf $align_root_no_ext-genes.tar.gz @gene_file_names --remove-files");
+#	system("mv $align_root_no_ext-genes.tar.gz ..");
+	system("tar czf $align_root_no_ext.tar.gz @gene_file_names --remove-files");
+	system("mv $align_root_no_ext.tar.gz ..");
 	print "done.\n";
 }
 
@@ -1631,7 +1631,6 @@ sub check_path_for_exec {
 		$dir .= "/" if ($dir !~ /\/$/);
 		$exec_path = abs_path($dir.$exec) if (-e $dir.$exec);
 	}
-	die if ($client);
 
 	die "Could not find the following executable: '$exec'. This script requires this program in your path.\n" if (!defined($exec_path));
 	return $exec_path;
