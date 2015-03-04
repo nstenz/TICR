@@ -13,9 +13,6 @@ use Getopt::Long;
 # Turn on autoflush
 $|++;
 
-# Pseudo-boolean that stores IP of server
-#my $client;
-
 # Server port
 my $port = 10002;
 
@@ -25,15 +22,8 @@ my @machines;
 # Path to text file containing computers to run on
 my $machine_file_path;
 
-# Input archive information variablesj
-#my $archive_path;
-#my $alignment_root;
-#my $alignment_name;
-#my $server_check_file;
-
 # MrBayes block which will be used for each run
 my $mb_block;
-#my $mb_block_path;
 
 # Where this script is located 
 my $script_path = abs_path($0);
@@ -51,7 +41,6 @@ my $project_name = "mb-run-dir";
 # Read commandline settings
 GetOptions(
 	"no-forks"          => \$no_forks,
-#	"archive|a:s"       => \$archive_path,
 	"mrbayes-block|m:s" => \$mb_block,
 	"machine-file:s"    => \$machine_file_path,
 	"check|c:s"         => \&check_nonconvergent,
@@ -74,6 +63,15 @@ die "You specified a MrBayes run archive instead of an MDL gene archive.\n" if (
 die "You must specify a file containing a valid MrBayes block which will be appended to each gene.\n\n", &usage if (!defined($mb_block));
 die "Could not locate '$mb_block', perhaps you made a typo.\n\n" if (!-e $mb_block);
 
+# Determine which machines we will run the analyses on
+if (defined($machine_file_path)) {
+	print "Fetching machine names listed in '$machine_file_path'...\n";
+	open(my $machine_file, '<', $machine_file_path);
+	chomp(@machines = <$machine_file>);
+	close($machine_file);
+	print "  $_\n" foreach (@machines);
+}
+
 print "\nScript was called as follows:\n$invocation\n";
 
 # Load MrBayes block into memory
@@ -95,31 +93,14 @@ my $archive_abs_path = abs_path($archive);
 # Remove conditional eventually
 run_cmd("ln -s $archive_abs_path $project_name/$archive_root") if (! -e "$project_name/$archive_root");
 
-# Determine which machines we will run the analyses on
-if (defined($machine_file_path)) {
-	print "Fetching machine names listed in '$machine_file_path'...\n";
-	open(my $machine_file, '<', $machine_file_path);
-	chomp(@machines = <$machine_file>);
-	close($machine_file);
-	print "  $_\n" foreach (@machines);
-}
-
 chdir($project_name);
-
-#($alignment_root = $archive_path) =~ s/(.*\/).*/$1/;
-#($alignment_name = $archive_path) =~ s/.*\/(.*)-genes\.tar\.gz/$1/;
-#if ($alignment_root eq $alignment_name) {
-#	$alignment_root = getcwd()."/";
-#	$alignment_name =~ s/(.*)-genes\.tar\.gz/$1/;
-#}
-#chdir($alignment_root);
 
 # Change how Ctrl+C is interpreted to allow for clean up
 $SIG{'INT'} = 'INT_handler';
 
 # Define and initialize directories
 #my $gene_dir = $alignment_root."mdl-genes/";
-my $gene_dir = "mdl-genes/";
+my $gene_dir = "genes/";
 mkdir($gene_dir) or die "Could not create '$gene_dir': $!.\n" if (!-e $gene_dir);
 
 # TODO: figure out how to rework rerunning, probably just specify output directory
@@ -140,10 +121,6 @@ my $mb_archive = "$archive_root_no_ext.mb.tar.gz";
 # Clean up files remaining from previous runs, needed?
 clean_up({'DIRS' => 0});
 
-#chomp(my @genes = `tar tf $archive_path`);
-#system("tar", "xf", $archive_path, "-C", $gene_dir);
-#chomp(my @genes = `tar tf $archive`);
-#system("tar", "xf", $archive, "-C", $gene_dir);
 chomp(my @genes = `tar xvf $archive -C $gene_dir`);
 
 chdir($gene_dir);
@@ -164,6 +141,7 @@ if (%complete_genes) {
 
 die "\nAll jobs have already completed.\n\n" if (!@genes);
 
+# Append given MrBayes block to the end of each gene
 print "\nAppending MrBayes block to each gene... ";
 foreach my $gene (@genes) {
 	open(my $gene_file, ">>", $gene) or die "Could not open '$gene': $!.\n";
@@ -172,8 +150,8 @@ foreach my $gene (@genes) {
 }
 print "done.\n\n";
 
-chomp(my $server_ip = `dig +short myip.opendns.com \@resolver1.opendns.com`); # Returns the external IP address of this computer
-
+# Returns the external IP address of this computer
+chomp(my $server_ip = `dig +short myip.opendns.com \@resolver1.opendns.com`);
 # Initialize a server
 my $sock = IO::Socket::INET->new(
 	LocalAddr  => $server_ip.":".$port,
@@ -186,16 +164,12 @@ $sock->autoflush(1);
 
 print "Job server successfully created.\n";
 
-#chdir($alignment_root);
-#chdir("..");
-
 # Should probably do this earlier
 # Determine server hostname and add to machines if none were specified by the user
 chomp(my $server_hostname = `hostname`);
 push(@machines, $server_hostname) if (scalar(@machines) == 0);
 
 my @pids;
-my @client_pids;
 foreach my $machine (@machines) {
 
 	# Fork and create a client on the given machine
@@ -214,17 +188,12 @@ foreach my $machine (@machines) {
 		system("scp", "-q", $mb, $machine.":/tmp");
 
 		# Execute this perl script on the given machine
-		#setpgrp();
-		#exec("ssh", $machine, "perl", "/tmp/".$script_name, "--client=$server_ip");
-		#exec("ssh", "-t", "-t", $machine, "perl", "/tmp/".$script_name, "--client=$server_ip");
-		#exec("ssh '$machine' 'perl - --client=$server_ip' < $script_path");
-		#exec("ssh", "-tt", $machine, "perl", "/tmp/".$script_name, "--client=$server_ip");
-		exec("ssh -tt $machine perl /tmp/$script_name --client=$server_ip");
+		# -tt forces pseudo-terminal allocation and lets us stop remote processes
+		exec("ssh", "-tt", "$machine", "perl", "/tmp/$script_name", "--client=$server_ip");
 		exit(0);
 	}
 	else {
 		push(@pids, $pid);
-		push(@client_pids, $pid);
 	}
 }
 
@@ -266,8 +235,11 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 		else {
 
 			# Get client's message
-			my $response = <$client>;
+		#	my $response = <$client>;
+		#	next if (not defined($response)); # a response should never actually be undefined
+			my $response = $client->getline();
 			next if (not defined($response)); # a response should never actually be undefined
+
 			if ($response =~ /SEND_FILE: (.*)/) {
 				my $file_name = $1;
 				receive_file({'FILE_PATH' => $file_name, 'FILE_HANDLE' => $client});	
@@ -282,50 +254,24 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 					printf("\n  Analyses complete: %".$num_digits."d/%d.\r", 0, scalar(@genes)) if ($job_number == 0);
 
 					my $gene = $genes[$job_number];
-#					if ($client_ip eq $server_ip) {
-#						print {$client} "CHDIR: $gene_dir\n";
-#						print {$client} "NEW: $gene\n";
-#					}
-#					elsif (exists($shared_fs_clients{$client_ip})) {
-#						my $pid = fork(); 
-#						if ($pid == 0) {
-#							system("mv", $gene, $ENV{'HOME'});
-#							print {$client} "NEW: $gene\n";
-#							exit(0);
-#						}
-#					}
-#					else {
-#						$SIG{CHLD} = 'IGNORE';
-#
-#						my $pid = fork(); 
-#						if ($pid == 0) {
-#							send_file({'FILE_PATH' => $gene, 'FILE_HANDLE' => $client});						
-#							unlink($gene);
-#
-#							print {$client} "NEW: $gene\n";
-#							exit(0);
-#						}
-#					}
+
+					# Check whether the client is remote or local, send it needed files if remote
 					if ($client_ip ne $server_ip) {
 
 						$SIG{CHLD} = 'IGNORE';
 
+						# Fork to perform the file transfer and prevent stalling the server
 						my $pid = fork(); 
 						if ($pid == 0) {
 							send_file({'FILE_PATH' => $gene, 'FILE_HANDLE' => $client});						
 							unlink($gene);
 
-							#print {$client} "NEW: 'mxram 10000;p $nexus_file_name'\n";
-							#print {$client} "NEW: '$gene'\n";
 							print {$client} "NEW: $gene\n";
 							exit(0);
 						}
 					}
 					else {
 						print {$client} "CHDIR: ".abs_path("./")."\n";
-						print "\nCHDIR: ".abs_path("./")."\n";
-						print "\nNEW: $gene\n";
-						#print {$client} "NEW: 'mxram 10000;p $nexus_file_name'\n";
 						print {$client} "NEW: $gene\n";
 					}
 					$job_number++;
@@ -377,26 +323,16 @@ sub client {
 	chdir("/tmp");
 	my $mb = "/tmp/mb";
 
-	#$SIG{HUP} = sub { unlink(glob($gene."*")) if defined($gene); exit(0); };
-
-#	close(STDIN);
-#	close(STDOUT);
-#	close(STDERR);
-
-	#setpgrp();
-	#setpgrp(0, 0);
-	#my $pgrp = $$;
-	my $pgrp = getpgrp();
-
-	#$SIG{HUP} = sub { kill -9, $pgrp; exit(0); };
+	#my $pgrp = getpgrp();
+	my $pgrp = $$;
 
 	chomp(my $ip = `dig +short myip.opendns.com \@resolver1.opendns.com`); 
 	die "Could not establish an IP address for host.\n" if (not defined $ip);
 
 	my @pids;
-#	my $total_forks = get_free_cpus(); 
-#	$total_forks-- if ($ip eq $server_ip); # the server also uses 100% of a cpu
-	my $total_forks = 5;
+	my $total_forks = get_free_cpus(); 
+	$total_forks-- if ($ip eq $server_ip); # the server also uses 100% of a cpu
+	#my $total_forks = 5;
 
 	my $fork_id = 1;
 	if ($total_forks > 1) {
@@ -404,7 +340,6 @@ sub client {
 
 			my $pid = fork();
 			if ($pid == 0) {
-	#			setpgrp(0, $pgrp);
 				last;
 			}
 			else {
@@ -414,27 +349,29 @@ sub client {
 		}
 	}
 
-	#$SIG{HUP} = sub { kill -15, $$; exit(0); };
 	$SIG{CHLD} = 'IGNORE';
-	$SIG{HUP} = sub { kill 15, $$; exit(0); };
+	$SIG{HUP} = sub { unlink($0, $mb); kill -15, $$; exit(0); };
 
 	my $gene;
 
-	#my @unlink;
+	my @unlink;
 	#$SIG{INT} = sub { unlink(@unlink) };
 	#$SIG{INT} = sub { unlink(glob($gene."*")) if defined($gene); unlink($check_file) };
-	$SIG{INT} = sub { unlink(glob($gene."*")) if defined($gene) };
+	#$SIG{INT} = sub { unlink(glob($gene."*")) if defined($gene) };
 	#$SIG{INT} = sub { unlink(glob($gene."*"), $check_file) if defined($gene) };
+	$SIG{TERM} = sub { unlink(glob($gene."*")) if defined($gene); };
 
 	my $sock = new IO::Socket::INET(
 		PeerAddr  => $server_ip.":".$port,
 		Proto => 'tcp') 
 	or exit(0); 
 	$sock->autoflush(1);
+	#$sock->autoflush(0);
 
 	print {$sock} "NEW: $ip\n";
 	#print {$sock} "FILE: $check_file || NEW: $ip\n";
 	while (chomp(my $response = <$sock>)) {
+
 		if ($response =~ /SEND_FILE: (.*)/) {
 			my $file_name = $1;
 			receive_file({'FILE_PATH' => $file_name, 'FILE_HANDLE' => $sock});	
@@ -456,39 +393,36 @@ sub client {
 			unlink($gene);
 
 			my @results = glob($gene."*");
-			#print "@results\n";
 
 			my $gene_archive_name = "$gene.tar.gz";
 			system("tar", "czf", $gene_archive_name, @results);
 
 			if ($server_ip ne $ip) {
 				send_file({'FILE_PATH' => $gene_archive_name, 'FILE_HANDLE' => $sock});	
-				#print "sending file.\n";
 				unlink($gene_archive_name);
+
+#				my $pid = fork();
+#				if ($pid == 0) {
+#					send_file({'FILE_PATH' => $gene_archive_name, 'FILE_HANDLE' => $sock});	
+#					unlink($gene_archive_name);
+#					unlink(@results);
+#
+#					print {$sock} "DONE || NEW: $ip\n";
+#					exit(0);
+#				}
 			}
-		#	if ($server_ip ne $ip) {
-		#		if ($shared_file_system) {
-		#			print {$sock} "MV: $gene_archive_name || NEW: $ip\n";
-		#		}
-		#		else {
-		#			send_file({'FILE_PATH' => $gene_archive_name, 'FILE_HANDLE' => $sock});	
-		#			unlink($gene_archive_name);
-		#			print {$sock} "DONE || NEW: $ip\n";
-		#		}
-		#	}
-		#	else {
-		#		print {$sock} "DONE || NEW: $ip\n";
-		#	}
+#			else {
+#				unlink(@results);
+#			}
 
 			unlink(@results);
 
 			print {$sock} "DONE || NEW: $ip\n";
-			#print {$sock} "NEW: $ip\n";
-			#print {$sock} "MV: $gene_archive_name || NEW: $ip\n";
 		}
 		elsif ($response eq "HANGUP") {
 			last;
 		}
+		$sock->flush();
 	}
 
 	# Have initial client wait for all others to finish and clean up
@@ -696,6 +630,14 @@ sub send_file {
 	close($file);
 
 	print {$file_handle} " END_FILE: $hash\n";
+
+	# Stall until we know status of file transfer
+	while (defined(my $response = <$file_handle>)) {
+		chomp($response);
+
+		last if ($response eq "TRANSFER_SUCCESS");
+		die "Unsuccessful file transfer, checksums did not match.\n" if ($response eq "TRANSFER_FAILURE");
+	}
 }
 
 sub receive_file {
@@ -718,18 +660,22 @@ sub receive_file {
 	}
 	close($file);
 
+	# Use md5 hashsum to make sure transfer worked
 	my $hash = hashsum({'FILE_PATH' => $file_path});
 	if ($hash ne $check_hash) {
-		print "Unsuccessful file transfer, checksums do not match.\n'$hash' - '$check_hash'\n"; # hopefully this never pops up
+		die "Unsuccessful file transfer, checksums do not match.\n'$hash' - '$check_hash'\n"; # hopefully this never pops up
+		print {$file_handle} "TRANSFER_FAILURE\n"
+	}
+
+	else {
+		print {$file_handle} "TRANSFER_SUCCESS\n";
 	}
 }
 
 sub INT_handler {
 
-	print "INT:\n";
-	foreach my $pid (@client_pids) {
-		print "\nkilling $pid\n";
-		#kill(-9, $pid);
+	# Kill ssh process(es) spawn by this script
+	foreach my $pid (@pids) {
 		kill(9, $pid);
 	}
 
