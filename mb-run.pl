@@ -6,8 +6,9 @@ use IO::Select;
 use IO::Socket;
 use Digest::MD5;
 use Getopt::Long;
-use File::Path qw(remove_tree);
 use Cwd qw(abs_path);
+use Fcntl qw(:flock);
+use File::Path qw(remove_tree);
 use Time::HiRes qw(time usleep);
 
 # Turn on autoflush
@@ -28,8 +29,14 @@ my $mb_block;
 # Where this script is located 
 my $script_path = abs_path($0);
 
+# Where the script was called from
+my $initial_directory = $ENV{PWD};
+
 # General script settings
 my $no_forks;
+
+# Allow for reusing info from an old run
+my $input_is_dir = 0;
 
 # How the script was called
 my $invocation = "perl mb-run.pl @ARGV";
@@ -63,6 +70,9 @@ die "You specified a MrBayes run archive instead of an MDL gene archive.\n" if (
 die "You must specify a file containing a valid MrBayes block which will be appended to each gene.\n\n", &usage if (!defined($mb_block));
 die "Could not locate '$mb_block', perhaps you made a typo.\n\n" if (!-e $mb_block);
 
+# Input is a previous run directory, reuse information
+$input_is_dir++ if (-d $archive);
+
 # Determine which machines we will run the analyses on
 if (defined($machine_file_path)) {
 	print "Fetching machine names listed in '$machine_file_path'...\n";
@@ -76,22 +86,52 @@ print "\nScript was called as follows:\n$invocation\n";
 
 # Load MrBayes block into memory
 open(my $mb_block_file, "<", $mb_block) or die "Could not open '$mb_block': $!.\n";
-chomp(my @mb_block = <$mb_block_file>);
+my @mb_block = <$mb_block_file>;
 close($mb_block_file);
 
-$mb_block = join("\n", @mb_block);
+my $archive_root;
+my $archive_root_no_ext;
+if (!$input_is_dir) {
 
-# Extract name information from input file
-(my $archive_root = $archive) =~ s/.*\/(.*)/$1/;
-#(my $archive_root_no_ext = $archive) =~ s/.*\/(.*)\..*/$1/;
-(my $archive_root_no_ext = $archive) =~ s/(.*\/)?(.*)(\.tar\.gz)|(\.tgz)/$2/;
+	# Clean run with no prior output
 
-# Initialize working directory
-# Remove conditional eventually
-mkdir($project_name) || die "Could not create '$project_name'$!.\n" if (!-e $project_name);
-my $archive_abs_path = abs_path($archive);
-# Remove conditional eventually
-run_cmd("ln -s $archive_abs_path $project_name/$archive_root") if (! -e "$project_name/$archive_root");
+	# Extract name information from input file
+	($archive_root = $archive) =~ s/.*\/(.*)/$1/;
+	($archive_root_no_ext = $archive) =~ s/(.*\/)?(.*)(\.tar\.gz)|(\.tgz)/$2/;
+
+	# Initialize working directory
+	# Remove conditional eventually
+	mkdir($project_name) || die "Could not create '$project_name'$!.\n" if (!-e $project_name);
+
+	my $archive_abs_path = abs_path($archive);
+	# Remove conditional eventually
+	run_cmd("ln -s $archive_abs_path $project_name/$archive_root") if (! -e "$project_name/$archive_root");
+}
+else {
+
+	# Prior output available, set relevant variables
+
+	$project_name = $archive;
+	my @contents = glob("$project_name/*");
+
+	# Determine the archive name by looking for a symlink
+	my $found_name = 0;
+	foreach my $file (@contents) {
+		if (-l $file) {
+			$file =~ s/\Q$project_name\E\///;
+			$archive = $file;
+			$found_name = 1;
+		}
+	}
+	die "Could not locate archive in '$project_name'.\n" if (!$found_name);
+
+	# Extract name information from input file
+	($archive_root = $archive) =~ s/.*\/(.*)/$1/;
+	($archive_root_no_ext = $archive) =~ s/(.*\/)?(.*)(\.tar\.gz)|(\.tgz)/$2/;
+}
+
+# The name of the output archive
+my $mb_archive = "$archive_root_no_ext.mb.tar.gz";
 
 chdir($project_name);
 
@@ -99,38 +139,34 @@ chdir($project_name);
 $SIG{'INT'} = 'INT_handler';
 
 # Define and initialize directories
-#my $gene_dir = $alignment_root."mdl-genes/";
 my $gene_dir = "genes/";
 mkdir($gene_dir) or die "Could not create '$gene_dir': $!.\n" if (!-e $gene_dir);
 
-# TODO: figure out how to rework rerunning, probably just specify output directory
+# Check if completed genes from a previous run exist
 my %complete_genes;
-#my $mb_archive = "$archive_root_no_ext-mb.tar.gz";
-my $mb_archive = "$archive_root_no_ext.mb.tar.gz";
-##my $mb_archive = "$alignment_name-mb.tar.gz";
-#if (-e $mb_archive) {
-#	print "\nArchive containing completed MrBayes runs found for this dataset found in '$mb_archive'.\n";
-#	print "Completed runs contained in this archive will be removed from the job queue.\n";
-#	chomp(my @complete_genes = `tar tf $mb_archive`);
-#	foreach my $gene (@complete_genes) {
-#		$gene =~ s/\.tar\.gz//;
-#		$complete_genes{$gene}++;
-#	}
-#}
+if (-e $mb_archive) {
+	print "\nArchive containing completed MrBayes runs found for this dataset found in '$mb_archive'.\n";
+	print "Completed runs contained in this archive will be removed from the job queue.\n";
 
-# Clean up files remaining from previous runs, needed?
-clean_up({'DIRS' => 0});
+	# Add gene names in tarball to list of completed genes
+	chomp(my @complete_genes = `tar tf $mb_archive`);
+	foreach my $gene (@complete_genes) {
+		$gene =~ s/\.tar\.gz//;
+		$complete_genes{$gene}++;
+	}
+}
 
+# Unarchive input genes 
 chomp(my @genes = `tar xvf $archive -C $gene_dir`);
 
 chdir($gene_dir);
 
-#@genes = glob($alignment_name."*");
-@genes = glob($archive_root_no_ext."*.nex");
-@genes = sort { (local $a = $a) =~ s/.*-(\d+)-\d+\..*/$1/; 
-				(local $b = $b) =~ s/.*-(\d+)-\d+\..*/$1/; 
-				$a <=> $b } @genes;
+#@genes = glob($archive_root_no_ext."*.nex");
+#@genes = sort { (local $a = $a) =~ s/.*-(\d+)-\d+\..*/$1/; 
+#				(local $b = $b) =~ s/.*-(\d+)-\d+\..*/$1/; 
+#				$a <=> $b } @genes;
 
+# Remove completed genes
 if (%complete_genes) {
 	foreach my $index (reverse(0 .. $#genes)) {
 		if (exists($complete_genes{$genes[$index]})) {
@@ -145,7 +181,7 @@ die "\nAll jobs have already completed.\n\n" if (!@genes);
 print "\nAppending MrBayes block to each gene... ";
 foreach my $gene (@genes) {
 	open(my $gene_file, ">>", $gene) or die "Could not open '$gene': $!.\n";
-	print {$gene_file} "\n$mb_block\n";
+	print {$gene_file} "\n", @mb_block;
 	close($gene_file);
 }
 print "done.\n\n";
@@ -248,9 +284,35 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 			}
 
 			# Client has finished a job
-			if ($response =~ /DONE \|\|/) {
+			if ($response =~ /DONE (.*) \|\|/) {
 				$complete_count++;				
 				printf("  Analyses complete: %".$num_digits."d/%d.\r", $complete_count, scalar(@genes));
+
+				# Check if this is the first to complete, if so we must create the directory
+				my $completed_gene = $1;
+				if (!-e "../$mb_archive") {
+					system("tar", "cf", "../$mb_archive", "$completed_gene", "--remove-files");
+				}
+				else {
+
+					# Perform appending of new gene to tarball in a fork as this can take some time
+					my $pid = fork();
+					if ($pid == 0) {
+
+						# Obtain a file lock on archive so another process doesn't simultaneously try to add to it
+						open(my $mb_archive_file, "<", "../$mb_archive");
+						flock($mb_archive_file, LOCK_EX) || die "Could not lock '$mb_archive_file': $!.\n";
+						
+						# Add completed gene
+						system("tar", "rf", "../$mb_archive", "$completed_gene", "--remove-files");
+
+						# Release lock
+						flock($mb_archive_file, LOCK_UN) || die "Could not unlock '$mb_archive_file': $!.\n";
+						close($mb_archive_file);
+
+						exit(0);
+					}
+				}
 			}
 
 			# Client wants a new job
@@ -305,34 +367,37 @@ foreach my $pid (@pids) {
 print "\n  All connections closed.\n";
 print "Total execution time: ", secs_to_readable({'TIME' => time() - $time}), "\n\n";
 
-# Create list of tarballs that should be present
-my @tarballs = map { local $_ = $_; $_ .= ".tar.gz"; $_ } @genes;
+#print "removing $initial_directory/$project_name/$gene_dir\n";
+rmdir("$initial_directory/$project_name/$gene_dir");
 
-print "Compressing and archiving results... ";
-
-# Check if output from a previous run exists
-if (-e "../".$mb_archive) {
-
-	# Go to project directory
-	chdir("..");
-
-	# Unarchive old archive and add its contents to @tarballs
-	chomp(my @complete_genes = `tar xvf $mb_archive -C $gene_dir`);
-	push(@tarballs, @complete_genes);
-
-	# Reenter gene directory
-	chdir($gene_dir);
-}
-
-# Archive the genes into a single tarball and move it back into the project directory
-system("tar", "czf", $mb_archive, @tarballs, "--remove-files");
-system("mv", $mb_archive, "..");
-
-# Go back to project directory
-chdir("..");
-rmdir($gene_dir);
-
-print "done.\n\n";
+## Create list of tarballs that should be present
+#my @tarballs = map { local $_ = $_; $_ .= ".tar.gz"; $_ } @genes;
+#
+#print "Compressing and archiving results... ";
+#
+## Check if output from a previous run exists
+#if (-e "../".$mb_archive) {
+#
+#	# Go to project directory
+#	chdir("..");
+#
+#	# Unarchive old archive and add its contents to @tarballs
+#	chomp(my @complete_genes = `tar xvf $mb_archive -C $gene_dir`);
+#	push(@tarballs, @complete_genes);
+#
+#	# Reenter gene directory
+#	chdir($gene_dir);
+#}
+#
+## Archive the genes into a single tarball and move it back into the project directory
+#system("tar", "czf", $mb_archive, @tarballs, "--remove-files");
+#system("mv", $mb_archive, "..");
+#
+## Go back to project directory
+#chdir("..");
+#rmdir($gene_dir);
+#
+#print "done.\n\n";
 
 sub client {
 	my ($opt_name, $server_ip) = @_;	
@@ -409,7 +474,6 @@ sub client {
 			# Zip and tarball the results
 			my @results = glob($gene."*");
 			my $gene_archive_name = "$gene.tar.gz";
-			#system("tar", "czf", $gene_archive_name, @results);
 			system("tar", "czf", $gene_archive_name, @results, "--remove-files");
 
 			# Send the results back to the server if this is a remote client
@@ -418,10 +482,8 @@ sub client {
 				unlink($gene_archive_name);
 			}
 
-			#unlink(@results);
-
 			# Request a new job
-			print {$sock} "DONE || NEW: $ip\n";
+			print {$sock} "DONE $gene_archive_name || NEW: $ip\n";
 		}
 		elsif ($response eq "HANGUP") {
 			last;
@@ -521,6 +583,12 @@ sub check_nonconvergent {
 
 		(my $log_file_path = $gene) =~ s/\.tar\.gz$/.log/;
 
+		# Check log file exists
+		if (!-e $log_file_path) {
+			print "Could not locate log file for '$gene'.\n";
+			exit(0);
+		}
+
 		open(my $log_file, "<", $log_file_path);
 		chomp(my @data = <$log_file>);
 		close($log_file);
@@ -564,6 +632,8 @@ sub remove_nonconvergent {
 		print "You must specify a directory previously generated by this script to check for nonconvergent genes.\n";
 		exit(0);
 	}
+
+	my $initial_archive = $archive;
 
 	# Prior output available, set relevant variables
 
@@ -625,6 +695,12 @@ sub remove_nonconvergent {
 
 		(my $log_file_path = $gene) =~ s/\.tar\.gz$/.log/;
 
+		# Check log file exists
+		if (!-e $log_file_path) {
+			print "Could not locate log file for '$gene'.\n";
+			exit(0);
+		}
+
 		open(my $log_file, "<", $log_file_path);
 		chomp(my @data = <$log_file>);
 		close($log_file);
@@ -655,12 +731,15 @@ sub remove_nonconvergent {
 
 	# Recreate archive with remaining genes
 	if (@genes) {
-		system("tar", "czf", $incomplete_archive, @genes);
+		system("tar", "czf", $incomplete_archive, @genes, "--remove-files");
 		system("mv", $incomplete_archive, "..");
 	}
 	else {
-		# Delete the archive if no genes meet the threshold
-		unlink("../$incomplete_archive"); 
+		# Delete the working directory if no genes meet the threshold
+		print "No genes met the threshold, removing specified directory.\n";
+
+		chdir($initial_directory);
+		$SIG{INT} = sub { remove_tree($initial_archive); exit(0) };
 	}
 
 	# Clean up and exit
@@ -745,27 +824,42 @@ sub INT_handler {
 		kill(9, $pid);
 	}
 
-	chdir($gene_dir);
-#	my @genes = glob($alignment_name."*.nex.tar.gz");
+#	# Move into gene directory
+#	chdir("$initial_directory/$gene_dir");
+#
+#	# Determine which genes may have completed
+#	my @genes = glob($archive_root_no_ext."*.nex.tar.gz");
 #	@genes = sort { (local $a = $a) =~ s/.*-(\d+)-\d+\..*/$1/; 
 #					(local $b = $b) =~ s/.*-(\d+)-\d+\..*/$1/; 
 #					$a <=> $b } @genes;
-#	chdir($alignment_root);
 #
+#	# Return to project directory
+#	chdir("..");
+#
+#	# Check if any jobs finished
 #	if (@genes) {
-#		print "Adding results from ".scalar(@genes)." run(s) to '$mb_archive'.\n";
+#		print "Keyboard interrupt detected, adding results from ".scalar(@genes)." run(s) to '$mb_archive'.\n";
+#
+#		# Unzip genes in current archive so they can be added to the new one
 #		if (-e $mb_archive) {
-#			chomp(my @complete_genes = `tar tf $mb_archive`);
-#			system("tar", "xf", $mb_archive, "-C", $gene_dir);
+#			chomp(my @complete_genes = `tar xvf $mb_archive -C $gene_dir`);
 #			push(@genes, @complete_genes);
 #			unlink($mb_archive);
 #		}
+#
+#		# Return to gene directory
 #		chdir($gene_dir);
+#
+#		# Created new archive and move it to the project directory
 #		system("tar", "czf", $mb_archive, @genes);
-#		system("mv", $mb_archive, $alignment_root);
+#		system("mv", $mb_archive, "..");
 #	}
 #
-#	clean_up({'DIRS' => 1});
+#	# Remove gene directory
+#	chdir("..");
+#	remove_tree($gene_dir);
+
+	#clean_up({'DIRS' => 1});
 	exit(0);
 }
 
