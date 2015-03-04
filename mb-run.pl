@@ -1,14 +1,14 @@
 #!/usr/bin/perl
 use strict;
 use warnings;
-#use Cwd;
-use Cwd qw(abs_path);
 use POSIX;
 use IO::Select;
 use IO::Socket;
 use Digest::MD5;
-use Time::HiRes qw(time);
 use Getopt::Long;
+use File::Path qw(remove_tree);
+use Cwd qw(abs_path);
+use Time::HiRes qw(time usleep);
 
 # Turn on autoflush
 $|++;
@@ -43,17 +43,17 @@ GetOptions(
 	"no-forks"          => \$no_forks,
 	"mrbayes-block|m:s" => \$mb_block,
 	"machine-file:s"    => \$machine_file_path,
-	"check|c:s"         => \&check_nonconvergent,
-	"remove|r:s"        => \&remove_nonconvergent,
+	"check|c:f"         => \&check_nonconvergent,
+	"remove|r:f"        => \&remove_nonconvergent,
 	"client:s"          => \&client, # for internal usage only
 	"help|h"            => sub { print &help; exit(0); },
 	"usage"             => sub { print &usage; exit(0); },
 );
 
+
 # Get paths to required executables
 my $mb = check_path_for_exec("mb");
 
-#my $archive_path = shift(@ARGV);
 my $archive = shift(@ARGV);
 
 # Some error checking
@@ -224,6 +224,9 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 	# Contains handles to clients which have sent information to the server
 	my @clients = $select->can_read(0);
 
+	# Free up CPU by sleeping for 10 ms
+	usleep(10000);
+
 	# Handle each ready client individually
 	CLIENT: foreach my $client (@clients) {
 
@@ -235,21 +238,26 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 		else {
 
 			# Get client's message
-		#	my $response = <$client>;
-		#	next if (not defined($response)); # a response should never actually be undefined
-			my $response = $client->getline();
+			my $response = <$client>;
 			next if (not defined($response)); # a response should never actually be undefined
 
+			# Client wants to send us a file
 			if ($response =~ /SEND_FILE: (.*)/) {
 				my $file_name = $1;
 				receive_file({'FILE_PATH' => $file_name, 'FILE_HANDLE' => $client});	
 			}
+
+			# Client has finished a job
 			if ($response =~ /DONE \|\|/) {
 				$complete_count++;				
 				printf("  Analyses complete: %".$num_digits."d/%d.\r", $complete_count, scalar(@genes));
 			}
+
+			# Client wants a new job
 			if ($response =~ /NEW: (.*)/) {
 				my $client_ip = $1;
+
+				# Check if jobs remain in the queue
 				if ($job_number < scalar(@genes)) {
 					printf("\n  Analyses complete: %".$num_digits."d/%d.\r", 0, scalar(@genes)) if ($job_number == 0);
 
@@ -263,7 +271,7 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 						# Fork to perform the file transfer and prevent stalling the server
 						my $pid = fork(); 
 						if ($pid == 0) {
-							send_file({'FILE_PATH' => $gene, 'FILE_HANDLE' => $client});						
+							send_file({'FILE_PATH' => $gene, 'FILE_HANDLE' => $client});	
 							unlink($gene);
 
 							print {$client} "NEW: $gene\n";
@@ -277,6 +285,7 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 					$job_number++;
 				}
 				else {
+						# Client has asked for a job, but there are none remaining
 					print {$client} "HANGUP\n";
 					$select->remove($client);
 					$client->close();
@@ -296,29 +305,37 @@ foreach my $pid (@pids) {
 print "\n  All connections closed.\n";
 print "Total execution time: ", secs_to_readable({'TIME' => time() - $time}), "\n\n";
 
-die;
-
+# Create list of tarballs that should be present
 my @tarballs = map { local $_ = $_; $_ .= ".tar.gz"; $_ } @genes;
 
 print "Compressing and archiving results... ";
-#if (-e $alignment_root.$mb_archive) {
-if (-e $archive_root_no_ext.$mb_archive) {
-	#chdir($alignment_root);
+
+# Check if output from a previous run exists
+if (-e "../".$mb_archive) {
+
+	# Go to project directory
 	chdir("..");
-	#system("tar", "xf", $mb_archive, @tarballs);
-	#chomp(my @complete_genes = `tar xvf $mb_archive -C $gene_dir`);
+
+	# Unarchive old archive and add its contents to @tarballs
 	chomp(my @complete_genes = `tar xvf $mb_archive -C $gene_dir`);
 	push(@tarballs, @complete_genes);
+
+	# Reenter gene directory
 	chdir($gene_dir);
 }
+
+# Archive the genes into a single tarball and move it back into the project directory
 system("tar", "czf", $mb_archive, @tarballs, "--remove-files");
-#system("mv", $mb_archive, $alignment_root);
-system("mv", $mb_archive, $archive_root_no_ext);
+system("mv", $mb_archive, "..");
+
+# Go back to project directory
+chdir("..");
+rmdir($gene_dir);
+
 print "done.\n\n";
 
 sub client {
 	my ($opt_name, $server_ip) = @_;	
-	#chdir($ENV{'HOME'});
 
 	chdir("/tmp");
 	my $mb = "/tmp/mb";
@@ -326,15 +343,13 @@ sub client {
 	#my $pgrp = getpgrp();
 	my $pgrp = $$;
 
+	# Determine this host's IP
 	chomp(my $ip = `dig +short myip.opendns.com \@resolver1.opendns.com`); 
 	die "Could not establish an IP address for host.\n" if (not defined $ip);
 
+	# Spawn more clients
 	my @pids;
 	my $total_forks = get_free_cpus(); 
-	$total_forks-- if ($ip eq $server_ip); # the server also uses 100% of a cpu
-	#my $total_forks = 5;
-
-	my $fork_id = 1;
 	if ($total_forks > 1) {
 		foreach my $fork (1 .. $total_forks - 1) {
 
@@ -344,32 +359,29 @@ sub client {
 			}
 			else {
 				push(@pids, $pid);
-				$fork_id++;
 			}
 		}
 	}
 
-	$SIG{CHLD} = 'IGNORE';
-	$SIG{HUP} = sub { unlink($0, $mb); kill -15, $$; exit(0); };
-
+	# The name of the gene we are working on
 	my $gene;
 
+	# Stores filenames of unneeded files
 	my @unlink;
-	#$SIG{INT} = sub { unlink(@unlink) };
-	#$SIG{INT} = sub { unlink(glob($gene."*")) if defined($gene); unlink($check_file) };
-	#$SIG{INT} = sub { unlink(glob($gene."*")) if defined($gene) };
-	#$SIG{INT} = sub { unlink(glob($gene."*"), $check_file) if defined($gene) };
+
+	# Change signal handling so killing the server kills these processes and cleans up
+	$SIG{CHLD} = 'IGNORE';
+	$SIG{HUP}  = sub { unlink($0, $mb); kill -15, $$; exit(0); };
 	$SIG{TERM} = sub { unlink(glob($gene."*")) if defined($gene); };
 
+	# Connect to the server
 	my $sock = new IO::Socket::INET(
 		PeerAddr  => $server_ip.":".$port,
 		Proto => 'tcp') 
 	or exit(0); 
 	$sock->autoflush(1);
-	#$sock->autoflush(0);
 
 	print {$sock} "NEW: $ip\n";
-	#print {$sock} "FILE: $check_file || NEW: $ip\n";
 	while (chomp(my $response = <$sock>)) {
 
 		if ($response =~ /SEND_FILE: (.*)/) {
@@ -382,47 +394,38 @@ sub client {
 		elsif ($response =~ /NEW: (.*)/) {
 			$gene = $1;
 
+			# Redirect STDOUT to a log file
 			open(my $std_out, ">&", *STDOUT);
 			open(STDOUT, ">", $gene.".log");
 
 			system($mb, $gene);
 
+			# Put STDOUT back to normal
 			open(STDOUT, ">&", $std_out);
 			close($std_out);
 
 			unlink($gene);
 
+			# Zip and tarball the results
 			my @results = glob($gene."*");
-
 			my $gene_archive_name = "$gene.tar.gz";
-			system("tar", "czf", $gene_archive_name, @results);
+			#system("tar", "czf", $gene_archive_name, @results);
+			system("tar", "czf", $gene_archive_name, @results, "--remove-files");
 
+			# Send the results back to the server if this is a remote client
 			if ($server_ip ne $ip) {
 				send_file({'FILE_PATH' => $gene_archive_name, 'FILE_HANDLE' => $sock});	
 				unlink($gene_archive_name);
-
-#				my $pid = fork();
-#				if ($pid == 0) {
-#					send_file({'FILE_PATH' => $gene_archive_name, 'FILE_HANDLE' => $sock});	
-#					unlink($gene_archive_name);
-#					unlink(@results);
-#
-#					print {$sock} "DONE || NEW: $ip\n";
-#					exit(0);
-#				}
 			}
-#			else {
-#				unlink(@results);
-#			}
 
-			unlink(@results);
+			#unlink(@results);
 
+			# Request a new job
 			print {$sock} "DONE || NEW: $ip\n";
 		}
 		elsif ($response eq "HANGUP") {
 			last;
 		}
-		$sock->flush();
 	}
 
 	# Have initial client wait for all others to finish and clean up
@@ -436,170 +439,233 @@ sub client {
 	exit(0);
 }
 
-#sub check_nonconvergent {
-#	my ($opt_name, $threshold) = @_;	
-#
-#	print "\nScript was called as follows:\n$invocation\n";
-#
-#	die "You must specify an archive file.\n\n", &usage if (!defined($archive));
-#	die "Could not locate '$archive', perhaps you made a typo.\n\n" if (!-e $archive);
-#
-#	($alignment_root = $archive) =~ s/(.*\/).*/$1/;
-#	($alignment_name = $archive) =~ s/.*\/(.*)-genes\.tar\.gz/$1/;
-#	$alignment_name =~ s/.*\/(.*)-mb\.tar\.gz/$1/;
-#
-#	if ($alignment_root eq $alignment_name) {
-#		$alignment_root = getcwd()."/";
-#		$alignment_name =~ s/(.*)-genes\.tar\.gz/$1/;
-#		$alignment_name =~ s/(.*)-mb\.tar\.gz/$1/;
-#	}
-#
-#	my $archive_name = $alignment_name."-mb.tar.gz";
-#
-#	chdir($alignment_root);
-#
-#	die "Could not locate an archive containing completed MrBayes runs.\n" if (!-e $alignment_name."-mb.tar.gz");
-#
-#	print "\nScript was called as follows:\n$invocation\n";
-#
-#	my $tmp_dir = "mb-tmp/";
-#	mkdir($tmp_dir) if (!-e $tmp_dir);
-#
-#	system("tar", "xf", $archive_name, "-C", $tmp_dir);
-#
-#	chdir($tmp_dir);
-#	my @genes = glob($alignment_name."*.nex.tar.gz");
-#	@genes = sort { (local $a = $a) =~ s/.*-(\d+)-\d+\..*/$1/; 
-#					(local $b = $b) =~ s/.*-(\d+)-\d+\..*/$1/; 
-#					$a <=> $b } @genes;
-#	
-#	print "MrBayes results available for ", scalar(@genes), " total genes.\n";
-#	
-#	my $count = 0;
-#	foreach my $gene (@genes) {
-#		chomp(my @contents = `tar tf $gene`);
-#		system("tar", "xf", $gene);
-#
-#		(my $log_file_path = $gene) =~ s/\.tar\.gz$/.log/;
-#
-#		open(my $log_file, "<", $log_file_path);
-#		chomp(my @data = <$log_file>);
-#		close($log_file);
-#
-#		my @splits = grep { /Average standard deviation of split frequencies:/ } @data;
-#		my $final_split = pop(@splits);
-#
-#		$final_split =~ s/.*frequencies: (.*)/$1/;
-#
-#		#if ($final_split > $threshold) {
-#		if (!defined($final_split) || $final_split > $threshold) {
-##			unlink($gene);
-#			$count++;
-#		}
-#		unlink(@contents);
-#	}
-#	print "$count gene(s) failed to meet the threshold ($threshold).\n";
-#
-#	@genes = glob($alignment_name."*.nex.tar.gz");
-##	@genes = sort { (local $a = $a) =~ s/.*-(\d+)-\d+\..*/$1/; 
-##					(local $b = $b) =~ s/.*-(\d+)-\d+\..*/$1/; 
-##					$a <=> $b } @genes;
-#	unlink(@genes);
-#
-##	if (@genes) {
-##		system("tar", "czf", $archive_name, @genes);
-##		system("mv", $archive_name, $alignment_root);
-##		unlink(@genes);
-##	}
-#
-#	chdir($alignment_root);
-##	unlink($archive_name) if (!@genes); # delete the archive if no genes meet the threshold
-#	
-#	rmdir($tmp_dir);
-#		
-#	exit(0);
-#}
-#
-#sub remove_nonconvergent {
-#	my ($opt_name, $threshold) = @_;	
-#
-#	die "You must specify an archive file.\n\n", &usage if (!defined($archive));
-#	die "Could not locate '$archive', perhaps you made a typo.\n\n" if (!-e $archive);
-#
-#	($alignment_root = $archive) =~ s/(.*\/).*/$1/;
-#	($alignment_name = $archive) =~ s/.*\/(.*)-genes\.tar\.gz/$1/;
-#	$alignment_name =~ s/.*\/(.*)-mb\.tar\.gz/$1/;
-#
-#	if ($alignment_root eq $alignment_name) {
-#		$alignment_root = getcwd()."/";
-#		$alignment_name =~ s/(.*)-genes\.tar\.gz/$1/;
-#		$alignment_name =~ s/(.*)-mb\.tar\.gz/$1/;
-#	}
-#
-#	my $archive_name = $alignment_name."-mb.tar.gz";
-#
-#	chdir($alignment_root);
-#
-#	die "Could not locate an archive containing completed MrBayes runs.\n" if (!-e $alignment_name."-mb.tar.gz");
-#
-#	print "\nScript was called as follows:\n$invocation\n";
-#
-#	my $tmp_dir = "mb-tmp/";
-#	mkdir($tmp_dir) if (!-e $tmp_dir);
-#
-#	system("tar", "xf", $archive_name, "-C", $tmp_dir);
-#
-#	chdir($tmp_dir);
-#	my @genes = glob($alignment_name."*.nex.tar.gz");
-#	@genes = sort { (local $a = $a) =~ s/.*-(\d+)-\d+\..*/$1/; 
-#					(local $b = $b) =~ s/.*-(\d+)-\d+\..*/$1/; 
-#					$a <=> $b } @genes;
-#	
-#	print "MrBayes results available for ", scalar(@genes), " total genes.\n";
-#	
-#	my $count = 0;
-#	foreach my $gene (@genes) {
-#		chomp(my @contents = `tar tf $gene`);
-#		system("tar", "xf", $gene);
-#
-#		(my $log_file_path = $gene) =~ s/\.tar\.gz$/.log/;
-#
-#		open(my $log_file, "<", $log_file_path);
-#		chomp(my @data = <$log_file>);
-#		close($log_file);
-#
-#		my @splits = grep { /Average standard deviation of split frequencies:/ } @data;
-#		my $final_split = pop(@splits);
-#
-#		$final_split =~ s/.*frequencies: (.*)/$1/;
-#		
-#		#if ($final_split > $threshold) {
-#		if (!defined($final_split) || $final_split > $threshold) {
-#			unlink($gene);
-#			$count++;
-#		}
-#		unlink(@contents);
-#	}
-#	print "$count gene(s) failed to meet the threshold ($threshold) and have been removed.\n";
-#
-#	@genes = glob($alignment_name."*.nex.tar.gz");
-#	@genes = sort { (local $a = $a) =~ s/.*-(\d+)-\d+\..*/$1/; 
-#					(local $b = $b) =~ s/.*-(\d+)-\d+\..*/$1/; 
-#					$a <=> $b } @genes;
-#
-#	if (@genes) {
-#		system("tar", "czf", $archive_name, @genes);
-#		system("mv", $archive_name, $alignment_root);
-#		unlink(@genes);
-#	}
-#
-#	chdir($alignment_root);
-#	unlink($archive_name) if (!@genes); # delete the archive if no genes meet the threshold
-#	
-#	rmdir($tmp_dir);
-#		
-#	exit(0);
-#}
+sub check_nonconvergent {
+	my ($opt_name, $threshold) = @_;	
+
+	# We have to do weird things here to get the input name
+
+	my @ARGV = split(/\s+/, $invocation);
+	shift(@ARGV); shift(@ARGV);
+
+	# Look for a directory in arguments provided
+	my $archive;
+	foreach my $arg (@ARGV) {
+		if (-d $arg) {
+			$archive = $arg;	
+		}
+	}
+
+	# Die if user didn't give us a directory
+	if (!defined($archive)) {
+		print "You must specify a directory previously generated by this script to check for nonconvergent genes.\n";
+		exit(0);
+	}
+
+	# Prior output available, set relevant variables
+
+	$project_name = $archive;
+	my @contents = glob("$project_name/*");
+
+	# Determine the archive name by looking for a symlink
+	my $found_name = 0;
+	foreach my $file (@contents) {
+		if (-l $file) {
+			$file =~ s/\Q$project_name\E\///;
+			$archive = $file;
+			$found_name = 1;
+		}
+	}
+	die "Could not locate archive in '$project_name'.\n" if (!$found_name);
+
+	chdir($project_name);
+
+	# Extract name information from input file
+	(my $archive_root = $archive) =~ s/.*\/(.*)/$1/;
+	(my $archive_root_no_ext = $archive) =~ s/(.*\/)?(.*)(\.tar\.gz)|(\.tgz)/$2/;
+
+	# Should have some completed genes in it
+	my $incomplete_archive = $archive_root_no_ext.".mb.tar.gz";
+
+	# Check that the incomplete archive exists
+	if (!-e $incomplete_archive) {
+		print "Could not locate an archive containing completed MrBayes runs.\n";
+		exit(0);
+	}
+
+	print "\nScript was called as follows:\n$invocation\n\n";
+
+	# Create a temporary directory for our operations
+	my $check_dir = "tmp/";
+	mkdir($check_dir) if (!-e $check_dir);
+
+	$SIG{INT} = sub { remove_tree($check_dir); exit(0) };
+
+	# Open tarball in genes directory
+	chomp(my @genes = `tar xvf $incomplete_archive -C $check_dir`);
+	@genes = sort { (local $a = $a) =~ s/.*-(\d+)-\d+\..*/$1/; 
+					(local $b = $b) =~ s/.*-(\d+)-\d+\..*/$1/; 
+					$a <=> $b } @genes;
+	
+	print "MrBayes results available for ", scalar(@genes), " total genes:\n";
+
+	chdir($check_dir);
+
+	$SIG{INT} = sub { chdir(".."); remove_tree($check_dir); exit(0) };
+
+	# Parse log of each gene to determine final standard deviation of split frequencies
+
+	my $count = 0;
+	foreach my $gene (@genes) {
+
+		chomp(my @contents = `tar xvf $gene`);
+
+		(my $log_file_path = $gene) =~ s/\.tar\.gz$/.log/;
+
+		open(my $log_file, "<", $log_file_path);
+		chomp(my @data = <$log_file>);
+		close($log_file);
+
+		my @splits = grep { /Average standard deviation of split frequencies:/ } @data;
+		my $final_split = pop(@splits);
+
+		$final_split =~ s/.*frequencies: (.*)/$1/;
+
+		print "  $gene: $final_split\n";
+
+		if (!defined($final_split) || $final_split > $threshold) {
+			$count++;
+		}
+		unlink(@contents);
+	}
+	printf("%d gene(s) failed to meet the threshold of %s (%.2f%%).\n", $count, $threshold, ($count / scalar(@genes) * 100));
+
+	# Clean up and exit
+	kill(2, $$);
+}
+
+sub remove_nonconvergent {
+	my ($opt_name, $threshold) = @_;	
+
+	# We have to do weird things here to get the input name
+
+	my @ARGV = split(/\s+/, $invocation);
+	shift(@ARGV); shift(@ARGV);
+
+	# Look for a directory in arguments provided
+	my $archive;
+	foreach my $arg (@ARGV) {
+		if (-d $arg) {
+			$archive = $arg;	
+		}
+	}
+
+	# Die if user didn't give us a directory
+	if (!defined($archive)) {
+		print "You must specify a directory previously generated by this script to check for nonconvergent genes.\n";
+		exit(0);
+	}
+
+	# Prior output available, set relevant variables
+
+	$project_name = $archive;
+	my @contents = glob("$project_name/*");
+
+	# Determine the archive name by looking for a symlink
+	my $found_name = 0;
+	foreach my $file (@contents) {
+		if (-l $file) {
+			$file =~ s/\Q$project_name\E\///;
+			$archive = $file;
+			$found_name = 1;
+		}
+	}
+	die "Could not locate archive in '$project_name'.\n" if (!$found_name);
+
+	chdir($project_name);
+
+	# Extract name information from input file
+	(my $archive_root = $archive) =~ s/.*\/(.*)/$1/;
+	(my $archive_root_no_ext = $archive) =~ s/(.*\/)?(.*)(\.tar\.gz)|(\.tgz)/$2/;
+
+	# Should have some completed genes in it
+	my $incomplete_archive = $archive_root_no_ext.".mb.tar.gz";
+
+	# Check that the incomplete archive exists
+	if (!-e $incomplete_archive) {
+		print "Could not locate an archive containing completed MrBayes runs.\n";
+		exit(0);
+	}
+
+	print "\nScript was called as follows:\n$invocation\n\n";
+
+	# Create a temporary directory for our operations
+	my $check_dir = "tmp/";
+	mkdir($check_dir) if (!-e $check_dir);
+
+	$SIG{INT} = sub { remove_tree($check_dir); exit(0) };
+
+	# Open tarball in genes directory
+	chomp(my @genes = `tar xvf $incomplete_archive -C $check_dir`);
+	@genes = sort { (local $a = $a) =~ s/.*-(\d+)-\d+\..*/$1/; 
+					(local $b = $b) =~ s/.*-(\d+)-\d+\..*/$1/; 
+					$a <=> $b } @genes;
+	
+	print "MrBayes results available for ", scalar(@genes), " total genes:\n";
+
+	chdir($check_dir);
+
+	$SIG{INT} = sub { chdir(".."); remove_tree($check_dir); exit(0) };
+
+	# Parse log of each gene to determine final standard deviation of split frequencies
+
+	my $count = 0;
+	foreach my $gene (@genes) {
+
+		chomp(my @contents = `tar xvf $gene`);
+
+		(my $log_file_path = $gene) =~ s/\.tar\.gz$/.log/;
+
+		open(my $log_file, "<", $log_file_path);
+		chomp(my @data = <$log_file>);
+		close($log_file);
+
+		my @splits = grep { /Average standard deviation of split frequencies:/ } @data;
+		my $final_split = pop(@splits);
+
+		$final_split =~ s/.*frequencies: (.*)/$1/;
+
+		print "  $gene: $final_split";
+		if (!defined($final_split) || $final_split > $threshold) {
+			unlink($gene);
+			print " -- REMOVED\n";
+			$count++;
+		}
+		else {
+			print "\n";
+		}
+		unlink(@contents);
+	}
+	printf("%d gene(s) failed to meet the threshold of %s (%.2f%%) and have been removed.\n", $count, $threshold, ($count / scalar(@genes) * 100));
+
+	# Determine which genes met threshold and still remain
+	@genes = glob($archive_root_no_ext."*.nex.tar.gz");
+	@genes = sort { (local $a = $a) =~ s/.*-(\d+)-\d+\..*/$1/; 
+					(local $b = $b) =~ s/.*-(\d+)-\d+\..*/$1/; 
+					$a <=> $b } @genes;
+
+	# Recreate archive with remaining genes
+	if (@genes) {
+		system("tar", "czf", $incomplete_archive, @genes);
+		system("mv", $incomplete_archive, "..");
+	}
+	else {
+		# Delete the archive if no genes meet the threshold
+		unlink("../$incomplete_archive"); 
+	}
+
+	# Clean up and exit
+	kill(2, $$);
+}
 
 sub hashsum {
 	my $settings = shift;
@@ -766,8 +832,6 @@ sub secs_to_readable {
 			}
 		}
 	}
-
-	
 
 	my $return;
 	if (exists($time{'DAY'})) {
