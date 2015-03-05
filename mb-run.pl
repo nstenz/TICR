@@ -52,7 +52,7 @@ GetOptions(
 	"machine-file:s"    => \$machine_file_path,
 	"check|c:f"         => \&check_nonconvergent,
 	"remove|r:f"        => \&remove_nonconvergent,
-	"client:s"          => \&client, # for internal usage only
+	"server-ip:s"       => \&client, # for internal usage only
 	"help|h"            => sub { print &help; exit(0); },
 	"usage"             => sub { print &usage; exit(0); },
 );
@@ -66,7 +66,7 @@ my $archive = shift(@ARGV);
 # Some error checking
 die "You must specify an archive file.\n\n", &usage if (!defined($archive));
 die "Could not locate '$archive', perhaps you made a typo.\n" if (!-e $archive);
-die "You specified a MrBayes run archive instead of an MDL gene archive.\n" if ($archive =~ /-mb\.tar\.gz$/);
+die "You specified a MrBayes run archive instead of an MDL gene archive.\n" if ($archive =~ /\.mb\.tar$/);
 die "You must specify a file containing a valid MrBayes block which will be appended to each gene.\n\n", &usage if (!defined($mb_block));
 die "Could not locate '$mb_block', perhaps you made a typo.\n\n" if (!-e $mb_block);
 
@@ -131,7 +131,7 @@ else {
 }
 
 # The name of the output archive
-my $mb_archive = "$archive_root_no_ext.mb.tar.gz";
+my $mb_archive = "$archive_root_no_ext.mb.tar";
 
 chdir($project_name);
 
@@ -225,7 +225,7 @@ foreach my $machine (@machines) {
 
 		# Execute this perl script on the given machine
 		# -tt forces pseudo-terminal allocation and lets us stop remote processes
-		exec("ssh", "-tt", "$machine", "perl", "/tmp/$script_name", "--client=$server_ip");
+		exec("ssh", "-tt", "$machine", "perl", "/tmp/$script_name", "--server-ip=$server_ip");
 		exit(0);
 	}
 	else {
@@ -546,7 +546,7 @@ sub check_nonconvergent {
 	(my $archive_root_no_ext = $archive) =~ s/(.*\/)?(.*)(\.tar\.gz)|(\.tgz)/$2/;
 
 	# Should have some completed genes in it
-	my $incomplete_archive = $archive_root_no_ext.".mb.tar.gz";
+	my $incomplete_archive = $archive_root_no_ext.".mb.tar";
 
 	# Check that the incomplete archive exists
 	if (!-e $incomplete_archive) {
@@ -567,6 +567,7 @@ sub check_nonconvergent {
 	@genes = sort { (local $a = $a) =~ s/.*-(\d+)-\d+\..*/$1/; 
 					(local $b = $b) =~ s/.*-(\d+)-\d+\..*/$1/; 
 					$a <=> $b } @genes;
+	my $longest_name_length = length($genes[$#genes]);
 	
 	print "MrBayes results available for ", scalar(@genes), " total genes:\n";
 
@@ -598,7 +599,8 @@ sub check_nonconvergent {
 
 		$final_split =~ s/.*frequencies: (.*)/$1/;
 
-		print "  $gene: $final_split\n";
+		#print "  $gene: $final_split\n";
+		printf("  %-${longest_name_length}s: %s\n", $gene, $final_split);
 
 		if (!defined($final_split) || $final_split > $threshold) {
 			$count++;
@@ -658,7 +660,7 @@ sub remove_nonconvergent {
 	(my $archive_root_no_ext = $archive) =~ s/(.*\/)?(.*)(\.tar\.gz)|(\.tgz)/$2/;
 
 	# Should have some completed genes in it
-	my $incomplete_archive = $archive_root_no_ext.".mb.tar.gz";
+	my $incomplete_archive = $archive_root_no_ext.".mb.tar";
 
 	# Check that the incomplete archive exists
 	if (!-e $incomplete_archive) {
@@ -679,6 +681,7 @@ sub remove_nonconvergent {
 	@genes = sort { (local $a = $a) =~ s/.*-(\d+)-\d+\..*/$1/; 
 					(local $b = $b) =~ s/.*-(\d+)-\d+\..*/$1/; 
 					$a <=> $b } @genes;
+	my $longest_name_length = length($genes[$#genes]);
 	
 	print "MrBayes results available for ", scalar(@genes), " total genes:\n";
 
@@ -710,14 +713,16 @@ sub remove_nonconvergent {
 
 		$final_split =~ s/.*frequencies: (.*)/$1/;
 
-		print "  $gene: $final_split";
+		#print "  $gene: $final_split";
 		if (!defined($final_split) || $final_split > $threshold) {
 			unlink($gene);
-			print " -- REMOVED\n";
+			#print " -- REMOVED\n";
+			printf("  %-${longest_name_length}s: %s -- REMOVED\n", $gene, $final_split);
 			$count++;
 		}
 		else {
-			print "\n";
+			printf("  %-${longest_name_length}s: %s\n", $gene, $final_split);
+			#print "\n";
 		}
 		unlink(@contents);
 	}
@@ -731,7 +736,8 @@ sub remove_nonconvergent {
 
 	# Recreate archive with remaining genes
 	if (@genes) {
-		system("tar", "czf", $incomplete_archive, @genes, "--remove-files");
+		#system("tar", "czf", $incomplete_archive, @genes, "--remove-files");
+		system("tar", "cf", $incomplete_archive, @genes, "--remove-files");
 		system("mv", $incomplete_archive, "..");
 	}
 	else {
@@ -824,42 +830,21 @@ sub INT_handler {
 		kill(9, $pid);
 	}
 
-#	# Move into gene directory
-#	chdir("$initial_directory/$gene_dir");
-#
-#	# Determine which genes may have completed
-#	my @genes = glob($archive_root_no_ext."*.nex.tar.gz");
-#	@genes = sort { (local $a = $a) =~ s/.*-(\d+)-\d+\..*/$1/; 
-#					(local $b = $b) =~ s/.*-(\d+)-\d+\..*/$1/; 
-#					$a <=> $b } @genes;
-#
-#	# Return to project directory
-#	chdir("..");
-#
-#	# Check if any jobs finished
-#	if (@genes) {
-#		print "Keyboard interrupt detected, adding results from ".scalar(@genes)." run(s) to '$mb_archive'.\n";
-#
-#		# Unzip genes in current archive so they can be added to the new one
-#		if (-e $mb_archive) {
-#			chomp(my @complete_genes = `tar xvf $mb_archive -C $gene_dir`);
-#			push(@genes, @complete_genes);
-#			unlink($mb_archive);
-#		}
-#
-#		# Return to gene directory
-#		chdir($gene_dir);
-#
-#		# Created new archive and move it to the project directory
-#		system("tar", "czf", $mb_archive, @genes);
-#		system("mv", $mb_archive, "..");
-#	}
-#
-#	# Remove gene directory
-#	chdir("..");
-#	remove_tree($gene_dir);
+	# Move into gene directory
+	chdir("$initial_directory");
 
-	#clean_up({'DIRS' => 1});
+	# Try to delete directory five times, if it can't be deleted print an error message
+	# I've found this method is necessary for analyses performed on AFS drives
+	my $count = 0;
+	until (!-e $gene_dir || $count == 5) {
+		$count++;
+
+		remove_tree($gene_dir, {error => \my $err});
+		sleep(1);
+	}
+	#logger("Could not clean all files in './$gene_dir/'.") if ($count == 5);
+	print "Could not clean all files in './$gene_dir/'.\n" if ($count == 5);
+
 	exit(0);
 }
 
