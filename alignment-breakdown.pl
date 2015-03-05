@@ -1,16 +1,16 @@
 #!/usr/bin/perl
 use strict;
 use warnings;
-use Cwd qw(abs_path);
 use Fcntl;
-use Fcntl ':flock';
+use Fcntl qw(:flock);
 use POSIX;
 use IO::Pipe;
 use IO::Handle;
 use IO::Select;
 use IO::Socket;
 use Getopt::Long;
-use Time::HiRes 'time';
+use Cwd qw(abs_path);
+use Time::HiRes qw(time usleep);
 
 # prevents printing a recursion warning which appear with large datasets
 no warnings 'recursion';
@@ -68,7 +68,7 @@ GetOptions(
 	"forced-break|f:i" => \$forced_break,
 	"no-forks"         => \$no_forks,
 	"machine-file:s"   => \$machine_file_path,
-	"client:s"         => \&client, # for internal usage only
+	"server-ip:s"      => \&client, # for internal usage only
 	"help|h"           => sub { print &help; exit(0); },
 	"usage"            => sub { print &usage; exit(0); },
 );
@@ -620,7 +620,7 @@ sub run_mdl {
 			}
 
 			# Execute this perl script on the given machine
-			exec("ssh", $machine, "perl", "/tmp/".$script_name, "--client=$server_ip");
+			exec("ssh", $machine, "perl", "/tmp/".$script_name, "--server-ip=$server_ip");
 
 			exit(0);
 		}
@@ -657,6 +657,9 @@ sub run_mdl {
 
 		# Contains handles to clients which have sent information to the server
 		my @clients = $select->can_read(0);
+
+		# Free up CPU by sleeping for 10 ms
+		usleep(10000);
 
 		# To prevent %scores from becoming too large, we dump it after every $subset_size calculations
 		my $total_scores = 0;
@@ -766,21 +769,10 @@ sub run_mdl {
 						my $align_file_name = $job->{'ALIGN_FILE_NAME'};
 
 						# Check whether the client is remote or local, send it needed files if remote
-						if ($client_ip ne $server_ip) {
-
-							$SIG{CHLD} = 'IGNORE';
-
-							# Fork to perform the file transfer and prevent stalling the server
-							my $pid = fork(); 
-							if ($pid == 0) {
-								print {$client} "NEW: '$score_file_name' '$paup_command'\n";
-								exit(0);
-							}
-						}
-						else {
+						if ($client_ip eq $server_ip) {
 							print {$client} "CHDIR: ".abs_path($score_dir)."\n";
-							print {$client} "NEW: '$score_file_name' '$paup_command'\n";
 						}
+						print {$client} "NEW: '$score_file_name' '$paup_command'\n";
 						$job_number++;
 					}
 					else {
@@ -1531,8 +1523,6 @@ sub secs_to_readable {
 			}
 		}
 	}
-
-	
 
 	my $return;
 	if (exists($time{'DAY'})) {
