@@ -58,8 +58,6 @@ GetOptions(
 	"no-forks"          => \$no_forks,
 	"machine-file=s"    => \$machine_file_path,
 	"alpha|a=f"         => \$alpha,
-	#"check|c:f"         => \&check_nonconvergent,
-	#"remove|r:f"        => \&remove_nonconvergent,
 	"server-ip=s"       => \&client, # for internal usage only
 	"help|h"            => sub { print &help; exit(0); },
 	"usage"             => sub { print &usage; exit(0); },
@@ -67,7 +65,6 @@ GetOptions(
 
 
 # Get paths to required executables
-#my $mb = check_path_for_exec("mb"); ##
 my $mbsum = check_path_for_exec("mbsum");
 my $bucky = check_path_for_exec("bucky");
 
@@ -76,9 +73,6 @@ my $archive = shift(@ARGV);
 # Some error checking
 die "You must specify an archive file.\n\n", &usage if (!defined($archive));
 die "Could not locate '$archive', perhaps you made a typo.\n" if (!-e $archive);
-#die "You specified a MrBayes run archive instead of an MDL gene archive.\n" if ($archive =~ /\.mb\.tar$/);
-#die "You must specify a file containing a valid MrBayes block which will be appended to each gene.\n\n", &usage if (!defined($mb_block));
-#die "Could not locate '$mb_block', perhaps you made a typo.\n\n" if (!-e $mb_block);
 
 # Input is a previous run directory, reuse information
 $input_is_dir++ if (-d $archive);
@@ -143,7 +137,6 @@ else {
 }
 
 # The name of the output archive
-my $mb_archive = "$archive_root_no_ext.mb.tar"; ##
 my $mbsum_archive = "$archive_root_no_ext.mbsum.tar.gz";
 my $bucky_archive = "$archive_root_no_ext.BUCKy.tar";
 my $quartet_output = "$archive_root_no_ext.CFs.csv";
@@ -154,10 +147,9 @@ chdir($project_name);
 $SIG{'INT'} = 'INT_handler';
 
 # Define and initialize directories
-my $gene_dir = "genes/"; ##
 my $mb_out_dir = "mb-out/";
 my $mb_sum_dir = "mb-sum/";
-#mkdir($gene_dir) or die "Could not create '$gene_dir': $!.\n" if (!-e $gene_dir);
+
 mkdir($mb_out_dir) or die "Could not create '$mb_out_dir': $!.\n" if (!-e $mb_out_dir);
 mkdir($mb_sum_dir) or die "Could not create '$mb_sum_dir': $!.\n" if (!-e $mb_sum_dir);
 
@@ -254,20 +246,15 @@ remove_tree($mb_out_dir);
 
 # Archive and zip mb summaries
 chdir($mb_sum_dir);
-#system("tar czf $mbsum_archive $archive_root_no_ext*.sum --remove-files");
-system("tar czf $mbsum_archive $archive_root_no_ext*.sum");
-#system("mv $mbsum_archive ..");
+system("tar", "czf", $mbsum_archive, glob("$archive_root_no_ext*.sum"));
+system("cp", $mbsum_archive, "..");
 chdir("..");
 
-## Clean up
-#chdir("..");
-#rmdir($mb_sum_dir);
-
-#die "\nAll jobs have already completed.\n\n" if (!@genes);
 die "\nAll quartets have already been completed.\n\n" if (!@quartets);
 
 # Returns the external IP address of this computer
 chomp(my $server_ip = `dig +short myip.opendns.com \@resolver1.opendns.com`);
+
 # Initialize a server
 my $sock = IO::Socket::INET->new(
 	LocalAddr  => $server_ip.":".$port,
@@ -293,7 +280,7 @@ foreach my $machine (@machines) {
 	my $pid = fork();	
 	if ($pid == 0) {
 		close(STDIN);
-		#close(STDOUT);
+		close(STDOUT);
 		close(STDERR);
 
 		(my $script_name = $script_path) =~ s/.*\///;
@@ -311,7 +298,6 @@ foreach my $machine (@machines) {
 
 		# Execute this perl script on the given machine
 		# -tt forces pseudo-terminal allocation and lets us stop remote processes
-		#exec("ssh", "-tt", $machine, "perl", "/tmp/$script_name", "--server-ip=$server_ip");
 		exec("ssh", "-tt", $machine, "perl", "/tmp/$script_name", $mbsum_archive, "--server-ip=$server_ip");
 		exit(0);
 	}
@@ -321,6 +307,8 @@ foreach my $machine (@machines) {
 }
 
 #chdir($gene_dir);
+# Move into mbsum directory
+chdir($mb_sum_dir);
 
 # Don't create zombies
 $SIG{CHLD} = 'IGNORE';
@@ -370,6 +358,7 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 			# Client wants to send us a file
 			if ($response =~ /SEND_FILE: (.*)/) {
 				my $file_name = $1;
+
 				receive_file({'FILE_PATH' => $file_name, 'FILE_HANDLE' => $client});	
 			}
 
@@ -379,8 +368,8 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 				$complete_count++;				
 				printf("  Analyses complete: %".$num_digits."d/%d.\r", $complete_count, scalar(@quartets));
 
-				# Move into mbsum directory
-				chdir($mb_sum_dir);
+			#	# Move into mbsum directory
+			#	chdir($mb_sum_dir);
 
 				my $completed_quartet = $1;
 				my $quartet_statistics = $2;
@@ -440,7 +429,7 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 				}
 
 				# Move back into working directory
-				chdir("..");
+				#chdir("..");
 			}
 
 			# Client wants a new job
@@ -482,7 +471,7 @@ print "\n  All connections closed.\n";
 print "Total execution time: ", secs_to_readable({'TIME' => time() - $time}), "\n\n";
 
 #print "removing $initial_directory/$project_name/$gene_dir\n";
-#rmdir("$initial_directory/$project_name/$gene_dir");
+rmdir("$initial_directory/$project_name/$mb_sum_dir");
 
 sub client {
 	my ($opt_name, $server_ip) = @_;	
@@ -504,7 +493,6 @@ sub client {
 	my $mbsum_archive = shift(@ARGV);
 
 	# Extract files from mbsum archive
-	#chomp(my @sums = `tar xvf $mbsum_archive`);
 	my @sums;
 	if (-e $mbsum_archive) {
 		chomp(@sums = `tar xvf $mbsum_archive`);
@@ -526,9 +514,6 @@ sub client {
 		}
 	}
 
-	# The name of the gene we are working on
-	my $gene;
-
 	# The name of the quartet we are working on
 	my $quartet;
 
@@ -537,9 +522,8 @@ sub client {
 
 	# Change signal handling so killing the server kills these processes and cleans up
 	$SIG{CHLD} = 'IGNORE';
-	#$SIG{HUP}  = sub { unlink($0, $mb); kill -15, $$; exit(0); };
-	$SIG{HUP}  = sub { unlink($0, $bucky); kill -15, $$; unlink(@sums); exit(0); };
-	#$SIG{TERM} = sub { unlink(glob($quartet."*")) if defined($quartet); };
+	#$SIG{HUP}  = sub { unlink($0, $bucky); kill -15, $$; unlink(@sums); unlink($mbsum_archive) if defined($mbsum_archive); exit(0); };
+	$SIG{HUP}  = sub { unlink($0, $bucky); unlink(@sums); unlink($mbsum_archive) if defined($mbsum_archive); kill -15, $$; };
 	$SIG{TERM} = sub { unlink(glob($quartet."*")) if defined($quartet); exit(0); };
 
 	# Connect to the server
@@ -552,11 +536,11 @@ sub client {
 	print {$sock} "NEW: $ip\n";
 	while (chomp(my $response = <$sock>)) {
 
-		if ($response =~ /SEND_FILE: (.*)/) {
-			my $file_name = $1;
-			receive_file({'FILE_PATH' => $file_name, 'FILE_HANDLE' => $sock});	
-		}
-		elsif ($response =~ /CHDIR: (.*)/) {
+#		if ($response =~ /SEND_FILE: (.*)/) {
+#			my $file_name = $1;
+#			receive_file({'FILE_PATH' => $file_name, 'FILE_HANDLE' => $sock});	
+#		}
+		if ($response =~ /CHDIR: (.*)/) {
 			chdir($1);
 		}
 		elsif ($response =~ /NEW: '(.*)' '(.*)'/) {
@@ -587,8 +571,7 @@ sub client {
 			close($prune_file);
 
 			# Run BUCKy on specified quartet
-			#system("$bucky $bucky_settings -cf 0 -o $quartet -p $prune_file_path @sums");
-			system("$bucky $bucky_settings -cf 0 -o $quartet -p $prune_file_path @sums >/dev/null");
+			system("$bucky $bucky_settings -cf 0 -o $quartet -p $prune_file_path @sums");
 			unlink($prune_file_path);
 
 			# Zip and tarball the results
@@ -598,6 +581,7 @@ sub client {
 			# Open concordance file and parse out the three possible resolutions
 			my $split_info = parse_concordance_output("$quartet.concordance", scalar(@sums));
 
+			# Archive and compress results
 			system("tar", "czf", $quartet_archive_name, @results, "--remove-files");
 
 			# Send the results back to the server if this is a remote client
@@ -619,7 +603,7 @@ sub client {
 			waitpid($pid, 0);
 		}
 		unlink($0, $bucky);
-		unlink(@sums);
+		unlink(@sums, $mbsum_archive);
 	}
 
 	exit(0);
@@ -807,257 +791,6 @@ sub okay_to_run {
 	return ($current_forks < $max_forks);
 }
 
-sub check_nonconvergent {
-	my ($opt_name, $threshold) = @_;	
-
-	# We have to do weird things here to get the input name
-
-	my @ARGV = split(/\s+/, $invocation);
-	shift(@ARGV); shift(@ARGV);
-
-	# Look for a directory in arguments provided
-	my $archive;
-	foreach my $arg (@ARGV) {
-		if (-d $arg) {
-			$archive = $arg;	
-		}
-	}
-
-	# Die if user didn't give us a directory
-	if (!defined($archive)) {
-		print "You must specify a directory previously generated by this script to check for nonconvergent genes.\n";
-		exit(0);
-	}
-
-	# Prior output available, set relevant variables
-
-	$project_name = $archive;
-	my @contents = glob("$project_name/*");
-
-	# Determine the archive name by looking for a symlink
-	my $found_name = 0;
-	foreach my $file (@contents) {
-		if (-l $file) {
-			$file =~ s/\Q$project_name\E\///;
-			$archive = $file;
-			$found_name = 1;
-		}
-	}
-	die "Could not locate archive in '$project_name'.\n" if (!$found_name);
-
-	chdir($project_name);
-
-	# Extract name information from input file
-	(my $archive_root = $archive) =~ s/.*\/(.*)/$1/;
-	(my $archive_root_no_ext = $archive) =~ s/(.*\/)?(.*)(\.tar\.gz)|(\.tgz)/$2/;
-
-	# Should have some completed genes in it
-	my $incomplete_archive = $archive_root_no_ext.".mb.tar";
-
-	# Check that the incomplete archive exists
-	if (!-e $incomplete_archive) {
-		print "Could not locate an archive containing completed MrBayes runs.\n";
-		exit(0);
-	}
-
-	print "\nScript was called as follows:\n$invocation\n\n";
-
-	# Create a temporary directory for our operations
-	my $check_dir = "tmp/";
-	mkdir($check_dir) if (!-e $check_dir);
-
-	$SIG{INT} = sub { remove_tree($check_dir); exit(0) };
-
-	# Open tarball in genes directory
-	chomp(my @genes = `tar xvf $incomplete_archive -C $check_dir`);
-	@genes = sort { (local $a = $a) =~ s/.*-(\d+)-\d+\..*/$1/; 
-					(local $b = $b) =~ s/.*-(\d+)-\d+\..*/$1/; 
-					$a <=> $b } @genes;
-	my $longest_name_length = length($genes[$#genes]);
-	
-	print "MrBayes results available for ", scalar(@genes), " total genes:\n";
-
-	chdir($check_dir);
-
-	$SIG{INT} = sub { chdir(".."); remove_tree($check_dir); exit(0) };
-
-	# Parse log of each gene to determine final standard deviation of split frequencies
-
-	my $count = 0;
-	foreach my $gene (@genes) {
-
-		chomp(my @contents = `tar xvf $gene`);
-
-		(my $log_file_path = $gene) =~ s/\.tar\.gz$/.log/;
-
-		# Check log file exists
-		if (!-e $log_file_path) {
-			print "Could not locate log file for '$gene'.\n";
-			exit(0);
-		}
-
-		open(my $log_file, "<", $log_file_path);
-		chomp(my @data = <$log_file>);
-		close($log_file);
-
-		my @splits = grep { /Average standard deviation of split frequencies:/ } @data;
-		my $final_split = pop(@splits);
-
-		$final_split =~ s/.*frequencies: (.*)/$1/;
-
-		#print "  $gene: $final_split\n";
-		printf("  %-${longest_name_length}s: %s\n", $gene, $final_split);
-
-		if (!defined($final_split) || $final_split > $threshold) {
-			$count++;
-		}
-		unlink(@contents);
-	}
-	printf("%d gene(s) failed to meet the threshold of %s (%.2f%%).\n", $count, $threshold, ($count / scalar(@genes) * 100));
-
-	# Clean up and exit
-	kill(2, $$);
-}
-
-sub remove_nonconvergent {
-	my ($opt_name, $threshold) = @_;	
-
-	# We have to do weird things here to get the input name
-
-	my @ARGV = split(/\s+/, $invocation);
-	shift(@ARGV); shift(@ARGV);
-
-	# Look for a directory in arguments provided
-	my $archive;
-	foreach my $arg (@ARGV) {
-		if (-d $arg) {
-			$archive = $arg;	
-		}
-	}
-
-	# Die if user didn't give us a directory
-	if (!defined($archive)) {
-		print "You must specify a directory previously generated by this script to check for nonconvergent genes.\n";
-		exit(0);
-	}
-
-	my $initial_archive = $archive;
-
-	# Prior output available, set relevant variables
-
-	$project_name = $archive;
-	my @contents = glob("$project_name/*");
-
-	# Determine the archive name by looking for a symlink
-	my $found_name = 0;
-	foreach my $file (@contents) {
-		if (-l $file) {
-			$file =~ s/\Q$project_name\E\///;
-			$archive = $file;
-			$found_name = 1;
-		}
-	}
-	die "Could not locate archive in '$project_name'.\n" if (!$found_name);
-
-	chdir($project_name);
-
-	# Extract name information from input file
-	(my $archive_root = $archive) =~ s/.*\/(.*)/$1/;
-	(my $archive_root_no_ext = $archive) =~ s/(.*\/)?(.*)(\.tar\.gz)|(\.tgz)/$2/;
-
-	# Should have some completed genes in it
-	my $incomplete_archive = $archive_root_no_ext.".mb.tar";
-
-	# Check that the incomplete archive exists
-	if (!-e $incomplete_archive) {
-		print "Could not locate an archive containing completed MrBayes runs.\n";
-		exit(0);
-	}
-
-	print "\nScript was called as follows:\n$invocation\n\n";
-
-	# Create a temporary directory for our operations
-	my $check_dir = "tmp/";
-	mkdir($check_dir) if (!-e $check_dir);
-
-	$SIG{INT} = sub { remove_tree($check_dir); exit(0) };
-
-	# Open tarball in genes directory
-	chomp(my @genes = `tar xvf $incomplete_archive -C $check_dir`);
-	@genes = sort { (local $a = $a) =~ s/.*-(\d+)-\d+\..*/$1/; 
-					(local $b = $b) =~ s/.*-(\d+)-\d+\..*/$1/; 
-					$a <=> $b } @genes;
-	my $longest_name_length = length($genes[$#genes]);
-	
-	print "MrBayes results available for ", scalar(@genes), " total genes:\n";
-
-	chdir($check_dir);
-
-	$SIG{INT} = sub { chdir(".."); remove_tree($check_dir); exit(0) };
-
-	# Parse log of each gene to determine final standard deviation of split frequencies
-
-	my $count = 0;
-	foreach my $gene (@genes) {
-
-		chomp(my @contents = `tar xvf $gene`);
-
-		(my $log_file_path = $gene) =~ s/\.tar\.gz$/.log/;
-
-		# Check log file exists
-		if (!-e $log_file_path) {
-			print "Could not locate log file for '$gene'.\n";
-			exit(0);
-		}
-
-		open(my $log_file, "<", $log_file_path);
-		chomp(my @data = <$log_file>);
-		close($log_file);
-
-		my @splits = grep { /Average standard deviation of split frequencies:/ } @data;
-		my $final_split = pop(@splits);
-
-		$final_split =~ s/.*frequencies: (.*)/$1/;
-
-		#print "  $gene: $final_split";
-		if (!defined($final_split) || $final_split > $threshold) {
-			unlink($gene);
-			#print " -- REMOVED\n";
-			printf("  %-${longest_name_length}s: %s -- REMOVED\n", $gene, $final_split);
-			$count++;
-		}
-		else {
-			printf("  %-${longest_name_length}s: %s\n", $gene, $final_split);
-			#print "\n";
-		}
-		unlink(@contents);
-	}
-	printf("%d gene(s) failed to meet the threshold of %s (%.2f%%) and have been removed.\n", $count, $threshold, ($count / scalar(@genes) * 100));
-
-	# Determine which genes met threshold and still remain
-	@genes = glob($archive_root_no_ext."*.nex.tar.gz");
-	@genes = sort { (local $a = $a) =~ s/.*-(\d+)-\d+\..*/$1/; 
-					(local $b = $b) =~ s/.*-(\d+)-\d+\..*/$1/; 
-					$a <=> $b } @genes;
-
-	# Recreate archive with remaining genes
-	if (@genes) {
-		#system("tar", "czf", $incomplete_archive, @genes, "--remove-files");
-		system("tar", "cf", $incomplete_archive, @genes, "--remove-files");
-		system("mv", $incomplete_archive, "..");
-	}
-	else {
-		# Delete the working directory if no genes meet the threshold
-		print "No genes met the threshold, removing specified directory.\n";
-
-		chdir($initial_directory);
-		$SIG{INT} = sub { remove_tree($initial_archive); exit(0) };
-	}
-
-	# Clean up and exit
-	kill(2, $$);
-}
-
 sub hashsum {
 	my $settings = shift;
 
@@ -1142,14 +875,14 @@ sub INT_handler {
 	# Try to delete directory five times, if it can't be deleted print an error message
 	# I've found this method is necessary for analyses performed on AFS drives
 	my $count = 0;
-	until (!-e $gene_dir || $count == 5) {
+	until (!-e $mb_sum_dir || $count == 5) {
 		$count++;
 
-		remove_tree($gene_dir, {error => \my $err});
+		remove_tree($mb_sum_dir, {error => \my $err});
 		sleep(1);
 	}
 	#logger("Could not clean all files in './$gene_dir/'.") if ($count == 5);
-	print "Could not clean all files in './$gene_dir/'.\n" if ($count == 5);
+	print "Could not clean all files in './$mb_sum_dir/'.\n" if ($count == 5);
 
 	exit(0);
 }
