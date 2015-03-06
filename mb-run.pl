@@ -437,7 +437,8 @@ sub client {
 
 	# Change signal handling so killing the server kills these processes and cleans up
 	$SIG{CHLD} = 'IGNORE';
-	$SIG{HUP}  = sub { unlink($0, $mb); kill -15, $$; exit(0); };
+	#$SIG{HUP}  = sub { unlink($0, $mb); kill -15, $$; exit(0); };
+	$SIG{HUP}  = sub { unlink($0, $mb); kill -15, $$; };
 	#$SIG{TERM} = sub { unlink(glob($gene."*")) if defined($gene); };
 	$SIG{TERM} = sub { unlink(glob($gene."*")) if defined($gene); exit(0)};
 

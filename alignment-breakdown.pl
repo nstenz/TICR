@@ -1216,7 +1216,8 @@ sub client {
 	# Change signal handling so killing the server kills these processes and cleans up
 	#$SIG{INT} = sub { unlink(@unlink) };
 	$SIG{CHLD} = 'IGNORE';
-	$SIG{HUP}  = sub { unlink($0, $paup); kill -15, $$; exit(0); };
+	#$SIG{HUP}  = sub { unlink($0, $paup); kill -15, $$; exit(0); };
+	$SIG{HUP}  = sub { unlink($0, $paup); kill -15, $$; };
 	$SIG{TERM} = sub { unlink(@unlink); exit(0); };
 
 	# Connect to the server
