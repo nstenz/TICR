@@ -75,6 +75,7 @@ $input_is_dir++ if (-d $archive);
 
 # Determine which machines we will run the analyses on
 if (defined($machine_file_path)) {
+	die "Could not locate '$machine_file_path'.\n" if (!-e $machine_file_path);
 	print "Fetching machine names listed in '$machine_file_path'...\n";
 	open(my $machine_file, '<', $machine_file_path);
 	chomp(@machines = <$machine_file>);
@@ -437,7 +438,8 @@ sub client {
 	# Change signal handling so killing the server kills these processes and cleans up
 	$SIG{CHLD} = 'IGNORE';
 	$SIG{HUP}  = sub { unlink($0, $mb); kill -15, $$; exit(0); };
-	$SIG{TERM} = sub { unlink(glob($gene."*")) if defined($gene); };
+	#$SIG{TERM} = sub { unlink(glob($gene."*")) if defined($gene); };
+	$SIG{TERM} = sub { unlink(glob($gene."*")) if defined($gene); exit(0)};
 
 	# Connect to the server
 	my $sock = new IO::Socket::INET(

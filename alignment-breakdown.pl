@@ -52,10 +52,6 @@ my $invocation = "perl alignment-breakdown.pl @ARGV";
 #my $project_name = "alignment-breakdown-".time();
 my $project_name = "alignment-breakdown-dir";
 
-# Get paths to required executables
-my $mdl = check_path_for_exec("mdl");
-my $paup = check_path_for_exec("paup");
-
 # Read commandline settings
 GetOptions(
 	"block-size|b:i"   => \$min_block_size,
@@ -72,6 +68,10 @@ GetOptions(
 	"help|h"           => sub { print &help; exit(0); },
 	"usage"            => sub { print &usage; exit(0); },
 );
+
+# Get paths to required executables
+my $mdl = check_path_for_exec("mdl");
+my $paup = check_path_for_exec("paup");
 
 my $align = shift(@ARGV);
 
@@ -92,7 +92,8 @@ $nletters++        if (!defined($exclude_gaps));
 
 # Extract name information from input file
 (my $align_root = $align) =~ s/.*\/(.*)/$1/;
-(my $align_root_no_ext = $align) =~ s/.*\/(.*)\..*/$1/;
+#(my $align_root_no_ext = $align) =~ s/.*\/(.*)\..*/$1/;
+(my $align_root_no_ext = $align) =~ s/(.*\/)?(.*)\..*/$2/;
 
 # Initialize working directory
 # Remove conditional eventually
@@ -104,6 +105,7 @@ run_cmd("ln -s $align_abs_path $project_name/$align_root") if (! -e "$project_na
 
 # Determine which machines we will run the analyses on
 if (defined($machine_file_path)) {
+	die "Could not locate '$machine_file_path'.\n" if (!-e $machine_file_path);
 	print "Fetching machine names listed in '$machine_file_path'...\n";
 	open(my $machine_file, '<', $machine_file_path);
 	chomp(@machines = <$machine_file>);
@@ -606,6 +608,10 @@ sub run_mdl {
 		# Fork and create a client on the given machine
 		my $pid = fork();	
 		if ($pid == 0) {
+			close(STDIN);
+			close(STDOUT);
+			close(STDERR);
+
 			(my $script_name = $script_path) =~ s/.*\///;
 
 			# Send this script to the machine
@@ -620,7 +626,8 @@ sub run_mdl {
 			}
 
 			# Execute this perl script on the given machine
-			exec("ssh", $machine, "perl", "/tmp/".$script_name, "--server-ip=$server_ip");
+			# -tt forces pseudo-terminal allocation and lets us stop remote processes
+			exec("ssh", "-tt", "$machine", "perl", "/tmp/$script_name", "--server-ip=$server_ip");
 
 			exit(0);
 		}
@@ -1203,9 +1210,14 @@ sub client {
 		}
 	}
 
-	# If the user interrupts the analysis we don't want to leave random files hanging around
+	# Stores filenames of unneeded files
 	my @unlink;
-	$SIG{INT} = sub { unlink(@unlink) };
+
+	# Change signal handling so killing the server kills these processes and cleans up
+	#$SIG{INT} = sub { unlink(@unlink) };
+	$SIG{CHLD} = 'IGNORE';
+	$SIG{HUP}  = sub { unlink($0, $paup); kill -15, $$; exit(0); };
+	$SIG{TERM} = sub { unlink(@unlink); exit(0); };
 
 	# Connect to the server
 	my $sock = new IO::Socket::INET(
