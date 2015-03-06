@@ -118,12 +118,10 @@ chdir($project_name);
 # Define and initialize directories
 my $gene_dir      = "mdl-genes/";
 my $score_dir     = "mdl-scores/";
-my $phylip_dir    = "mdl-phylip/";
 my $partition_dir = "mdl-partitions/";
 
 mkdir($gene_dir)      or die "Could not create '$gene_dir': $!.\n"      if (!-e $gene_dir);
 mkdir($score_dir)     or die "Could not create '$score_dir': $!.\n"     if (!-e $score_dir);
-mkdir($phylip_dir)    or die "Could not create '$phylip_dir': $!.\n"    if (!-e $phylip_dir);
 mkdir($partition_dir) or die "Could not create '$partition_dir': $!.\n" if (!-e $partition_dir);
 
 # Change how Ctrl+C is interpreted to allow for clean up
@@ -1299,7 +1297,6 @@ sub parallelize {
 	my %actions = ( 'run_mdl_block'             => \&run_mdl_block,
 					'write_partition'           => \&write_partition,
 					'write_nexus_file'          => \&write_nexus_file,
-					'write_phylip_file_segment' => \&write_phylip_file_segment,
 					'write_nexus_file_reduced'  => \&write_nexus_file_reduced);
 
 	my @childPIDs;
@@ -1574,14 +1571,12 @@ sub clean_up {
 #	chdir($alignment_root);
 #	unlink(glob($gene_dir."$alignment_name*"));
 	unlink(glob($score_dir."$align_root_no_ext*"));
-#	unlink(glob($phylip_dir."$alignment_name*"));
 #	#unlink(glob($partition_dir."$alignment_name*"));
 #	unlink(glob($alignment_name."-unreduced-*"));
 
 	if ($remove_dirs) {
 		rmdir($gene_dir);
 		rmdir($score_dir);
-		rmdir($phylip_dir);
 		#rmdir($partition_dir);
 	}
 	chdir($current_dir);
