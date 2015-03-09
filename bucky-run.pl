@@ -154,7 +154,7 @@ mkdir($mb_out_dir) or die "Could not create '$mb_out_dir': $!.\n" if (!-e $mb_ou
 mkdir($mb_sum_dir) or die "Could not create '$mb_sum_dir': $!.\n" if (!-e $mb_sum_dir);
 
 # Check if completed genes from a previous run exist
-my %complete_genes;
+#my %complete_genes;
 #if (-e $mb_archive) {
 #	print "\nArchive containing completed MrBayes runs found for this dataset found in '$mb_archive'.\n";
 #	print "Completed runs contained in this archive will be removed from the job queue.\n";
@@ -166,9 +166,49 @@ my %complete_genes;
 #		$complete_genes{$gene}++;
 #	}
 #}
+my %complete_quartets;
+if (-e $bucky_archive && -e $quartet_output) {
+	print "\nArchive containing completed quartets found for this dataset found in '$bucky_archive'.\n";
+	print "Completed quartets within in this archive will be removed from the job queue.\n";
+
+	# Because it takes longer to append to a tarball than append to a text file, the tarball most
+	# likely has fewer quartet entries in it, we must therefore account for this ensuring that
+	# the tarball and csv have the same quartet entries 
+
+	# See which quartets in the tarball are complete
+	chomp(my @complete_quartets_tarball = `tar tf $bucky_archive`);
+
+	# Add quartets to a hash for easier lookup
+	my %complete_quartets_tarball;
+	foreach my $complete_quartet (@complete_quartets_tarball) {
+		$complete_quartets_tarball{$complete_quartet}++;
+	}
+
+	# Load csv into memory
+	open(my $quartet_output_file, "<", $quartet_output);
+	(my @quartet_info = <$quartet_output_file>);
+	close($quartet_output_file);
+
+	# Remove header line
+	my $header = shift(@quartet_info);
+
+	# Rewrite csv to include only quartets also contained in tarball
+	open($quartet_output_file, ">", $quartet_output);
+	print {$quartet_output_file} $header;
+	foreach my $quartet (@quartet_info) {
+		my ($taxon1, $taxon2, $taxon3, $taxon4) = split(",", $quartet);
+		my $quartet_name = "$taxon1--$taxon2--$taxon3--$taxon4";
+		my $quartet_name_tarball = $quartet_name.".tar.gz";
+
+		if (exists($complete_quartets_tarball{$quartet_name_tarball})) {
+			$complete_quartets{$quartet_name}++;
+			print {$quartet_output_file} $quartet;
+		}
+	}
+	close($quartet_output_file);
+}
 
 # Unarchive input genes 
-#chomp(my @genes = `tar xvf $archive -C $gene_dir`);
 chomp(my @genes = `tar xvf $archive -C $mb_out_dir`);
 
 #chdir($gene_dir);
@@ -198,8 +238,8 @@ my @taxa = @{$mb_log->{TAXA}};
 
 # Create list of possible quartets
 my @quartets = combine(\@taxa, 4);
-print "Found ".scalar(@taxa)." taxa in this archive, ".scalar(@quartets).
-      " possible quartets will be run using output from ".scalar(@genes)." total genes.\n";
+
+my $original_size = scalar(@quartets);
 
 # Figure this out later
 ## Remove completed genes
@@ -210,45 +250,73 @@ print "Found ".scalar(@taxa)." taxa in this archive, ".scalar(@quartets).
 #		}
 #	}
 #}
+if (%complete_quartets) {
+	foreach my $index (reverse(0 .. $#quartets)) {
+		my $quartet = $quartets[$index];
+		$quartet = join("--", @{$quartet});
+		if (exists($complete_quartets{$quartet})) {
+			splice(@quartets, $index, 1);
+		}
+	}
+}
+
+print "Found ".scalar(@taxa)." taxa in this archive, ".scalar(@quartets)." of $original_size ".
+      "possible quartets will be run using output from ".scalar(@genes)." total genes.\n";
 
 # Go back to working directory
 chdir("..");
 
-# Run mbsum on each gene
-print "Summarizing MrBayes output for ".scalar(@genes)." genes.\n";
+# Determine whether or not we need to run mbsum on the specified input
+my $should_summarize = 1;
+if (-e $mbsum_archive && $input_is_dir) {
+	my @sums = `tar tf $mbsum_archive` || die "Something appears to be wrong with '$mbsum_archive'.\n";
 
-my @pids;
-foreach my $gene (@genes) {
-
-	# Wait until a CPU is available
-	until(okay_to_run()) {};
-	my $pid = fork();
-
-	# The child fork
-	if ($pid == 0) {
-		#setpgrp();
-		run_mbsum($gene);
-		exit(0);
+	# Check that each gene has actually been summarized, if not redo the summaries
+	if (scalar(@sums) != scalar(@genes)) {
+		unlink($mbsum_archive);
 	}
 	else {
-		push(@pids, $pid);
+		$should_summarize = 0;
 	}
 }
 
-# Wait for all summaries to finish
-foreach my $pid (@pids) {
-	waitpid($pid, 0);
+if ($should_summarize) {
+	# Run mbsum on each gene
+	print "Summarizing MrBayes output for ".scalar(@genes)." genes.\n";
+
+	my @pids;
+	foreach my $gene (@genes) {
+
+		# Wait until a CPU is available
+		until(okay_to_run()) {};
+		my $pid = fork();
+
+		# The child fork
+		if ($pid == 0) {
+			#setpgrp();
+			run_mbsum($gene);
+			exit(0);
+		}
+		else {
+			push(@pids, $pid);
+		}
+	}
+
+	# Wait for all summaries to finish
+	foreach my $pid (@pids) {
+		waitpid($pid, 0);
+	}
+	undef(@pids);
+
+	# Remove directory storing mb output
+	remove_tree($mb_out_dir);
+
+	# Archive and zip mb summaries
+	chdir($mb_sum_dir);
+	system("tar", "czf", $mbsum_archive, glob("$archive_root_no_ext*.sum"));
+	system("cp", $mbsum_archive, "..");
+	chdir("..");
 }
-undef(@pids);
-
-# Remove directory storing mb output
-remove_tree($mb_out_dir);
-
-# Archive and zip mb summaries
-chdir($mb_sum_dir);
-system("tar", "czf", $mbsum_archive, glob("$archive_root_no_ext*.sum"));
-system("cp", $mbsum_archive, "..");
-chdir("..");
 
 die "\nAll quartets have already been completed.\n\n" if (!@quartets);
 
@@ -272,8 +340,8 @@ print "Job server successfully created.\n";
 chomp(my $server_hostname = `hostname`);
 push(@machines, $server_hostname) if (scalar(@machines) == 0);
 
-#my @pids;
 #@pids;
+my @pids;
 foreach my $machine (@machines) {
 
 	# Fork and create a client on the given machine
@@ -306,12 +374,11 @@ foreach my $machine (@machines) {
 	}
 }
 
-#chdir($gene_dir);
 # Move into mbsum directory
 chdir($mb_sum_dir);
 
 # Don't create zombies
-$SIG{CHLD} = 'IGNORE';
+#$SIG{CHLD} = 'IGNORE';
 
 my $select = IO::Select->new($sock);
 
@@ -341,6 +408,11 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 	# Free up CPU by sleeping for 10 ms
 	usleep(10000);
 
+	# Reap any children that we can
+	foreach my $pid (@pids) {
+		waitpid($pid, WNOHANG);
+	}
+
 	# Handle each ready client individually
 	CLIENT: foreach my $client (@clients) {
 
@@ -358,18 +430,13 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 			# Client wants to send us a file
 			if ($response =~ /SEND_FILE: (.*)/) {
 				my $file_name = $1;
-
 				receive_file({'FILE_PATH' => $file_name, 'FILE_HANDLE' => $client});	
 			}
 
 			# Client has finished a job
-			#if ($response =~ /DONE (.*) \|\|/) {
 			if ($response =~ /DONE '(.*)' '(.*)' \|\|/) {
 				$complete_count++;				
 				printf("  Analyses complete: %".$num_digits."d/%d.\r", $complete_count, scalar(@quartets));
-
-			#	# Move into mbsum directory
-			#	chdir($mb_sum_dir);
 
 				my $completed_quartet = $1;
 				my $quartet_statistics = $2;
@@ -397,12 +464,16 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 
 						exit(0);
 					}
+					else {
+						push(@pids, $pid);
+					}
 				}
 
 				# Check if this is the first to complete, if so we must create CF output file
 				if (!-e "../$quartet_output") {
 					open(my $quartet_output_file, ">", "../$quartet_output");
-					print {$quartet_output_file} "taxon1\ttaxon2\ttaxon3\ttaxon4\tCF12|34\tCF13|24\tCF14|23\n";
+					#print {$quartet_output_file} "taxon1\ttaxon2\ttaxon3\ttaxon4\tCF12|34\tCF13|24\tCF14|23\n";
+					print {$quartet_output_file} "taxon1,taxon2,taxon3,taxon4,CF12.34,CF12.34_lo,CF12.34_hi,CF13.24,CF13.24_lo,CF13.24_hi,CF14.23,CF14.23_lo,CF14.23_hi\n";
 					print {$quartet_output_file} $quartet_statistics,"\n";
 					close($quartet_output);
 				}
@@ -426,10 +497,10 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 
 						exit(0);
 					}
+					else {
+						push(@pids, $pid);
+					}
 				}
-
-				# Move back into working directory
-				#chdir("..");
 			}
 
 			# Client wants a new job
@@ -444,7 +515,8 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 
 					# Tell local clients to move into mbsum directory
 					if ($client_ip eq $server_ip) {
-						print {$client} "CHDIR: ".abs_path($mb_sum_dir)."\n";
+						#print {$client} "CHDIR: ".abs_path($mb_sum_dir)."\n";
+						print {$client} "CHDIR: ".abs_path(".")."\n";
 					}
 					print {$client} "NEW: '$quartet' '-a $alpha -n $ngen'\n";
 					$job_number++;
@@ -462,7 +534,7 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 	}
 }
 
-# Don't think this is needed
+# Wait until all children have completed
 foreach my $pid (@pids) {
 	waitpid($pid, 0);
 }
@@ -470,7 +542,6 @@ foreach my $pid (@pids) {
 print "\n  All connections closed.\n";
 print "Total execution time: ", secs_to_readable({'TIME' => time() - $time}), "\n\n";
 
-#print "removing $initial_directory/$project_name/$gene_dir\n";
 rmdir("$initial_directory/$project_name/$mb_sum_dir");
 
 sub client {
@@ -480,7 +551,6 @@ sub client {
 	my $mb = "/tmp/mb";
 	my $bucky = "/tmp/bucky";
 
-	#my $pgrp = getpgrp();
 	my $pgrp = $$;
 
 	# Determine this host's IP
@@ -522,7 +592,6 @@ sub client {
 
 	# Change signal handling so killing the server kills these processes and cleans up
 	$SIG{CHLD} = 'IGNORE';
-	#$SIG{HUP}  = sub { unlink($0, $bucky); kill -15, $$; unlink(@sums); unlink($mbsum_archive) if defined($mbsum_archive); exit(0); };
 	$SIG{HUP}  = sub { unlink($0, $bucky); unlink(@sums); unlink($mbsum_archive) if defined($mbsum_archive); kill -15, $$; };
 	$SIG{TERM} = sub { unlink(glob($quartet."*")) if defined($quartet); exit(0); };
 
@@ -536,10 +605,6 @@ sub client {
 	print {$sock} "NEW: $ip\n";
 	while (chomp(my $response = <$sock>)) {
 
-#		if ($response =~ /SEND_FILE: (.*)/) {
-#			my $file_name = $1;
-#			receive_file({'FILE_PATH' => $file_name, 'FILE_HANDLE' => $sock});	
-#		}
 		if ($response =~ /CHDIR: (.*)/) {
 			chdir($1);
 		}
@@ -610,7 +675,6 @@ sub client {
 }
 
 sub parse_concordance_output {
-	#my $file_name = shift;
 	my ($file_name, $ngenes) = @_;
 
 	my @taxa;
@@ -654,11 +718,14 @@ sub parse_concordance_output {
 
 			# Parse mean number of loci for split
 			if ($line =~ /=\s+(\S+) \(number of loci\)/) {
-				#$splits{$split} = $1 / $ngenes;
 				$splits{$split}->{"CF"} = $1 / $ngenes;
 			}
+
+			# Parse 95% confidence interval 
 			if ($line =~ /95% CI for CF = \((\d+),(\d+)\)/) {
-				$splits{$split}->{"95%_CI"} = "(".($1 / $ngenes).",".($2 / $ngenes).")";
+				#$splits{$split}->{"95%_CI"} = "(".($1 / $ngenes).",".($2 / $ngenes).")";
+				$splits{$split}->{"95%_CI_LO"} = ($1 / $ngenes);
+				$splits{$split}->{"95%_CI_HI"} = ($2 / $ngenes);
 			}
 		}
 
@@ -667,38 +734,36 @@ sub parse_concordance_output {
 	}
 
 	# Concat taxa names together
-	my $return = join("\t", @taxa);
-	$return .= "\t";
+	my $return = join(",", @taxa);
+	$return .= ",";
 
-	# Concat split percentages with their 95% CI together
-#	foreach my $split (sort {$a cmp $b} keys %splits) {
-#		#$return .= $splits{$split}."\t";
-#		my $cf = $splits{$split}->{"CF"}.$splits{$split}->{"95%_CI"};
-#		$return .= "$cf\t";
-#	}
+	# Concat split proportions with their 95% CI to return
 	if (exists($splits{"12|34"})) {
-		$return .= $splits{"12|34"}->{"CF"}.$splits{"12|34"}->{"95%_CI"}."\t";
+		#$return .= $splits{"12|34"}->{"CF"}.$splits{"12|34"}->{"95%_CI"}."\t";
+		$return .= $splits{"12|34"}->{"CF"}.",".$splits{"12|34"}->{"95%_CI_LO"}.",".$splits{"12|34"}->{"95%_CI_HI"}.",";
 	}
 	else {
-		$return .= "0(0,0)\t";
+		#$return .= "0(0,0)\t";
+		$return .= "0,0,0,";
 	}
 
 	if (exists($splits{"13|24"})) {
-		$return .= $splits{"13|24"}->{"CF"}.$splits{"13|24"}->{"95%_CI"}."\t";
+		#$return .= $splits{"13|24"}->{"CF"}.$splits{"13|24"}->{"95%_CI"}."\t";
+		$return .= $splits{"13|24"}->{"CF"}.",".$splits{"13|24"}->{"95%_CI_LO"}.",".$splits{"13|24"}->{"95%_CI_HI"}.",";
 	}
 	else {
-		$return .= "0(0,0)\t";
+		#$return .= "0(0,0)\t";
+		$return .= "0,0,0,";
 	}
 
 	if (exists($splits{"14|23"})) {
-		$return .= $splits{"14|23"}->{"CF"}.$splits{"14|23"}->{"95%_CI"};
+		#$return .= $splits{"14|23"}->{"CF"}.$splits{"14|23"}->{"95%_CI"};
+		$return .= $splits{"14|23"}->{"CF"}.",".$splits{"14|23"}->{"95%_CI_LO"}.",".$splits{"14|23"}->{"95%_CI_HI"};
 	}
 	else {
-		$return .= "0(0,0)";
+		#$return .= "0(0,0)";
+		$return .= "0,0,0";
 	}
-
-	# Remove trailing "\t"
-	#chop($return);
 
 	return $return;
 }
@@ -866,7 +931,7 @@ sub INT_handler {
 
 	# Kill ssh process(es) spawn by this script
 	foreach my $pid (@pids) {
-		kill(9, $pid);
+		kill(-9, $pid);
 	}
 
 	# Move into gene directory
