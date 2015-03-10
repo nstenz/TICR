@@ -241,15 +241,7 @@ my @quartets = combine(\@taxa, 4);
 
 my $original_size = scalar(@quartets);
 
-# Figure this out later
-## Remove completed genes
-#if (%complete_genes) {
-#	foreach my $index (reverse(0 .. $#genes)) {
-#		if (exists($complete_genes{$genes[$index]})) {
-#			splice(@genes, $index, 1);
-#		}
-#	}
-#}
+# Remove completed quartets
 if (%complete_quartets) {
 	foreach my $index (reverse(0 .. $#quartets)) {
 		my $quartet = $quartets[$index];
@@ -269,7 +261,7 @@ chdir("..");
 # Determine whether or not we need to run mbsum on the specified input
 my $should_summarize = 1;
 if (-e $mbsum_archive && $input_is_dir) {
-	my @sums = `tar tf $mbsum_archive` || die "Something appears to be wrong with '$mbsum_archive'.\n";
+	chomp(my @sums = `tar tf $mbsum_archive`) || die "Something appears to be wrong with '$mbsum_archive'.\n";
 
 	# Check that each gene has actually been summarized, if not redo the summaries
 	if (scalar(@sums) != scalar(@genes)) {
@@ -451,10 +443,13 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 					my $pid = fork();
 					if ($pid == 0) {
 
+						(my $quartet = $completed_quartet) =~ s/\.tar\.gz//;
+						$SIG{TERM} = sub { close(STDIN); close(STDOUT); close(STDERR); unlink(glob("$quartet*")); exit(0); };
+
 						# Obtain a file lock on archive so another process doesn't simultaneously try to add to it
 						open(my $bucky_archive_file, "<", "../$bucky_archive");
 						flock($bucky_archive_file, LOCK_EX) || die "Could not lock '$bucky_archive': $!.\n";
-						
+
 						# Add completed gene
 						system("tar", "rf", "../$bucky_archive", $completed_quartet, "--remove-files");
 
@@ -487,7 +482,7 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 						open(my $quartet_output_file, ">>", "../$quartet_output");
 						flock($quartet_output_file, LOCK_EX) || die "Could not lock '$quartet_output': $!.\n";
 						seek($quartet_output_file, 0, SEEK_END) || die "Could not seek '$quartet_output': $!.\n";
-						
+
 						# Add completed gene
 						print {$quartet_output_file} $quartet_statistics,"\n";
 
@@ -591,9 +586,11 @@ sub client {
 	my @unlink;
 
 	# Change signal handling so killing the server kills these processes and cleans up
-	$SIG{CHLD} = 'IGNORE';
-	$SIG{HUP}  = sub { unlink($0, $bucky); unlink(@sums); unlink($mbsum_archive) if defined($mbsum_archive); kill -15, $$; };
-	$SIG{TERM} = sub { unlink(glob($quartet."*")) if defined($quartet); exit(0); };
+	#$SIG{CHLD} = 'IGNORE';
+	#$SIG{HUP}  = sub { print "\n\n$$ received SIGHUP\n\n"; unlink($0, $bucky); unlink(@sums); unlink($mbsum_archive) if defined($mbsum_archive); kill -15, $$; };
+	#$SIG{TERM} = sub { unlink(glob($quartet."*")) if defined($quartet); exit(0); };
+
+	$SIG{HUP}  = sub {unlink($0, $bucky); unlink(@sums); unlink($mbsum_archive) if defined($mbsum_archive); kill -15, $$; };
 
 	# Connect to the server
 	my $sock = new IO::Socket::INET(
@@ -612,8 +609,13 @@ sub client {
 			$quartet = $1;
 			my $bucky_settings = $2;
 
+			#$SIG{TERM} = sub { close(STDIN); close(STDOUT); close(STDERR); unlink(@unlink); exit(0); };
+			#$SIG{TERM} = sub { close(STDIN); close(STDOUT); close(STDERR); unlink(glob("$quartet*")); kill -9, $$; exit(0); };
+
 			# If client is local this needs to be defined now
-			chomp(@sums = `tar tf $mbsum_archive`)if (!@sums);
+			chomp(@sums = `tar tf $mbsum_archive`) if (!@sums);
+			#$SIG{TERM} = sub { unlink($0, $bucky); unlink(@sums); unlink($mbsum_archive); close(STDIN); close(STDOUT); close(STDERR); unlink(glob("$quartet*")); kill -9, $$; exit(0); };
+			$SIG{TERM} = sub { close(STDIN); close(STDOUT); close(STDERR); unlink(glob("$quartet*")); kill -9, $$; exit(0); };
 
 			# Create prune tree file contents required for BUCKy
 			my $count = 0;
@@ -631,9 +633,14 @@ sub client {
 
 			# Write prune tree file
 			my $prune_file_path = "$quartet-prune.txt";
+
+			push(@unlink, $prune_file_path);
+
 			open(my $prune_file, ">", $prune_file_path);
 			print {$prune_file} $prune_tree_output;
 			close($prune_file);
+
+			push(@unlink, "$quartet.input", "$quartet.out", "$quartet.cluster", "$quartet.concordance", "$quartet.gene");
 
 			# Run BUCKy on specified quartet
 			system("$bucky $bucky_settings -cf 0 -o $quartet -p $prune_file_path @sums");
@@ -647,13 +654,17 @@ sub client {
 			my $split_info = parse_concordance_output("$quartet.concordance", scalar(@sums));
 
 			# Archive and compress results
-			system("tar", "czf", $quartet_archive_name, @results, "--remove-files");
+			#system("tar", "czf", $quartet_archive_name, @results, "--remove-files");
+			system("tar", "czf", $quartet_archive_name, @results);
 
 			# Send the results back to the server if this is a remote client
 			if ($server_ip ne $ip) {
 				send_file({'FILE_PATH' => $quartet_archive_name, 'FILE_HANDLE' => $sock});	
 				unlink($quartet_archive_name);
 			}
+
+			unlink(@unlink);
+			undef(@unlink);
 
 			print {$sock} "DONE '$quartet_archive_name' '$split_info' || NEW: $ip\n";
 		}
@@ -931,7 +942,8 @@ sub INT_handler {
 
 	# Kill ssh process(es) spawn by this script
 	foreach my $pid (@pids) {
-		kill(-9, $pid);
+		#kill(-9, $pid);
+		kill(15, $pid);
 	}
 
 	# Move into gene directory
