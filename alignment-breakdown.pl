@@ -18,6 +18,9 @@ no warnings 'recursion';
 # Turn on autoflush
 $|++;
 
+# Maximum number of CPUs to use
+my $max_forks;
+
 # Server port
 my $port = 10001;
 
@@ -31,14 +34,14 @@ my $machine_file_path;
 my $script_path = abs_path($0);
 
 # MDL settings
-my $gap_isnt_char;
+my $gap_as_char;
+#my $gap_isnt_char;
 my $exclude_gaps;
 my $nletters = 4;
 my $nbestpart = 1;
 my $ngroupmax = 10000;
 
 # General script settings
-my $no_forks;
 my $forced_break;
 my $min_block_size;
 
@@ -49,22 +52,24 @@ my $num_pars_inf_chars;
 my $invocation = "perl alignment-breakdown.pl @ARGV";
 
 # Name of output directory
-#my $project_name = "alignment-breakdown-".time();
-my $project_name = "alignment-breakdown-dir";
+my $project_name = "mdl-".time();
+#my $project_name = "alignment-breakdown-dir";
 
 # Read commandline settings
 GetOptions(
-	"block-size|b:i"   => \$min_block_size,
-	"nletters|l:i"     => \$nletters,
-	"nbestpart|p:i"    => \$nbestpart,
-	"ngroupmax|m:i"    => \$ngroupmax,
-	#"gap-as-char|g"    => \$gap_as_char,
-	"gap-isnt-char|g"  => \$gap_isnt_char,
+	"block-size|b=i"   => \$min_block_size,
+	"nletters|l=i"     => \$nletters,
+	#"nbestpart|p=i"    => \$nbestpart,
+	#"ngroupmax|m=i"    => \$ngroupmax,
+	"gap-as-char|g"    => \$gap_as_char,
+	#"gap-isnt-char|g"  => \$gap_isnt_char,
+    "n-threads|T=i"    => \$max_forks,
+    "out-dir|o=s"      => \$project_name,
 	"exclude-gaps|e"   => \$exclude_gaps,
-	"forced-break|f:i" => \$forced_break,
-	"no-forks"         => \$no_forks,
-	"machine-file:s"   => \$machine_file_path,
-	"server-ip:s"      => \&client, # for internal usage only
+	"forced-break|f=i" => \$forced_break,
+	"machine-file=s"   => \$machine_file_path,
+	"port|p=i"         => \$port,
+	"server-ip=s"      => \&client, # for internal usage only
 	"help|h"           => sub { print &help; exit(0); },
 	"usage"            => sub { print &usage; exit(0); },
 );
@@ -78,21 +83,20 @@ my $align = shift(@ARGV);
 # Some error checking
 die "You must specify an alignment file.\n\n", &usage if (!defined($align));
 die "Could not locate '$align', perhaps you made a typo.\n" if (!-e $align);
-die "You must specify an alignment to partition.\n\n", &usage if (!defined($align));
-die "You must specify a minimum block length.\n\n",    &usage if (!defined($min_block_size));
+die "You must specify a minimum block length (-b).\n\n",    &usage if (!defined($min_block_size));
 die "The minimum block size must be greater than 0!\n" if ($min_block_size <= 0);
-die "Forced breakpoints cannot be placed at the distance you specified!\n" if (defined($forced_break) && $forced_break <= 0);
+die "Forced breakpoints can't be negative length!\n" if (defined($forced_break) && $forced_break <= 0);
 die "The minimum block size can not be greater than or equal to the forced breakpoint length.\n" if (defined($forced_break) && $min_block_size >= $forced_break);
 
 print "WARNING: It is not recommended to have forced breakpoints placed so frequently unless you are analyzing a very large dataset.\n" if (defined($forced_break) && $forced_break <= 100);
 
 # Adjust MDL settings depending on user input
-$gap_isnt_char = 1 if (defined($exclude_gaps));
-$nletters++        if (!defined($exclude_gaps));
+#$gap_isnt_char = 1 if (defined($exclude_gaps));
+$gap_as_char = 0 if (defined($exclude_gaps));
+$nletters++      if (!defined($exclude_gaps));
 
 # Extract name information from input file
 (my $align_root = $align) =~ s/.*\/(.*)/$1/;
-#(my $align_root_no_ext = $align) =~ s/.*\/(.*)\..*/$1/;
 (my $align_root_no_ext = $align) =~ s/(.*\/)?(.*)\..*/$2/;
 
 # Initialize working directory
@@ -308,8 +312,8 @@ sub write_nexus_file_reduced {
 		print {$out} "\n";
 	}	
 
-	# This would be needed in order to allow continuation of a failed run
-	# Add the absolute positions as a comment on the bottom for later scripts.
+	# TODO: Allow continuation of a failed run by adding the absolute 
+	# positions as a comment on the bottom for later scripts.
 
 #	print {$out} " ;\nend;\n[Absolute Character Locations:]\n[";
 #	for (my $i = 0; $i < $forced_break; $i++) {
@@ -361,6 +365,7 @@ sub write_nexus_file {
 	print {$out} "#NEXUS\nbegin data;\n dimensions ntax=".scalar(@taxa)." nchar=$nchar;\n ";
 	print {$out} "format datatype=dna interleave=yes gap=- missing=?;\n matrix\n";
 
+	# Output data matrix
 	for (my $i = 0; $i < $nchar; $i += $line_length) {
 		for (my $j = 0; $j < scalar(@taxa); $j++) {
 			my $taxon = $taxa[$j];
@@ -531,6 +536,7 @@ sub run_mdl {
 	my $total = ceil($num_pars_inf_chars / $forced_break);
 	for (my $i = 0; $i < $num_pars_inf_chars; $i += $forced_break) {
 
+		# Determine number of PICs in each forced breakpoint
 		my $align_length = $forced_break;
 		if ($i + $forced_break > $num_pars_inf_chars) {
 			$align_length = $num_pars_inf_chars - (($count - 1) * $forced_break);
@@ -749,15 +755,9 @@ sub run_mdl {
 															 'BREAK_INFO' => \%break_info});
 
 							# Write the command files required to run each job
-							print "\n  Writing command files for each block... ";
+							print "\n  Determining commands for each block... ";
 							
-							# TODO: eliminate actual writing of command, have it return file contents
 							my $time = time();
-							my $free_cpus = get_free_cpus();
-					#		parallelize({'METHOD'      => 'write_mdl_command', 
-					#					 'METHOD_ARGS' => {'GENES' => \@gene_subset}, 
-					#					 'MAX_FORKS'   => $free_cpus, 
-					#					 'TOTAL'       => scalar(@gene_subset)});
 							write_mdl_command({'GENES' => \@gene_subset});
 
 							print "done. ($start - ".($start + scalar(@gene_subset) - 1).")\n";
@@ -811,12 +811,11 @@ sub run_mdl {
 	print "Total execution time: ", secs_to_readable({'TIME' => time() - $time}), "\n\n";
 
 	chdir($project_name);
-	#parse_input({'GET_ALIGN' => 1});
-	#get_informative_chars({'ALIGN' => \%align});
 
+	# Calculate number of taxa in alignment for MDL
 	my $ntax = scalar(keys %align);
 
-	# Run each partition defined by the forced break points (if any) through MDL
+	# Run each partition defined by the forced break points separately through MDL
 	foreach my $partition (1 .. $total) {
 		my $data_file = "$align_root_no_ext-reduced-$partition"."of$total.nex";
 		my $output_name = $partition_dir."$align_root_no_ext-$partition"."of$total.partitions";
@@ -849,18 +848,12 @@ sub write_mdl_command {
 	$command .= "begin paup;\\nexecute ../$align_file_name;\\n";
 	$command .= "set warnroot=no warntree=no warnTsave=no ";
 	$command .= "increase=no maxtrees=50 monitor=no notifybeep=no;\\n";
-	$command .= "pset gapmode=newstate;\\n" if (!defined($gap_isnt_char));
+	#$command .= "pset gapmode=newstate;\\n" if (!defined($gap_isnt_char));
+	$command .= "pset gapmode=newstate;\\n" if (defined($gap_as_char));
 	$command .= "include $start-$end / only;\\n";
-	#$command .= "exclude missambig;\\n" if ($exclude_gaps);
+	$command .= "exclude missambig;\\n" if ($exclude_gaps);
 	$command .= "hsearch collapse=no;\\n";
-	#$command .= "Pscores 1 / scorefile=$alignment_name-scores-$file_number-".($block_num + 1)." replace=yes;\\n";
 	$command .= "Pscores 1 / scorefile=$score_file_name replace=yes;\\n";
-	#if ($savetrees) { $command .= "savetrees from=1 to=1 file=$treeFile format=altnexus append=yes;\\n";}
-
- 	#if ($savetrees) {
- 	#	$command .= "gettrees file=$treeFile allblocks=yes;\\n";
- 	#	$command .= "savetrees file=$alltreeFile format=altnexus replace=yes;\\n";
- 	#}
  	$command .= "quit;\\n";
  	$command .= "end;\\n";
 
@@ -977,7 +970,7 @@ sub get_block_subset {
 		push(@genes, \%info);
 	}
 
-	# Rerun this method until we have the requested number of job descriptions
+	# Recursively run this method until we have the requested number of job descriptions
 	if (scalar(@genes) < $size) {
 		my $break = $file_number + 1;
 		my $new_size = $size - scalar(@genes);
@@ -1023,8 +1016,8 @@ sub write_partitions {
 		# Doing this makes calculations easier
 		$nchar->{0} = $nchar->{1};
 
-		# Determine MDL partitions' starts and ends
-		# These indices are for the PIC alignment
+		# Determine each partition's start and end
+		# These indices are in parsimony-informative characters
 		foreach my $index (0 .. $#partitions) {
 			my $partition_start = $partitions[$index];
 
@@ -1055,6 +1048,7 @@ sub write_partitions {
 		my $reduced_start = $reduced_partitions{$partition}->{'START'};
 		my $reduced_end = $reduced_partitions{$partition}->{'END'};
 
+		# The first and last partition must be handled slightly differently
 		if ($partition == 1) {
 			my $next_partition_start = $locations[$reduced_partitions{$partition + 1}->{'START'} - 1];
 			my $this_partition_end = $locations[$reduced_partitions{$partition}->{'END'} - 1];
@@ -1076,15 +1070,15 @@ sub write_partitions {
 			$full_partitions{$partition}->{'END'} = $this_partition_end + $end_offset;
 		}
 
+		# Store breakpoint indices for later output
 		$stats{$partition}->{'REDUCED_START'} = $reduced_start;
 		$stats{$partition}->{'REDUCED_END'} = $reduced_end;
 		$stats{$partition}->{'FULL_START'} = $full_partitions{$partition}->{'START'};
 		$stats{$partition}->{'FULL_END'} = $full_partitions{$partition}->{'END'};
-		#print "Partition #$partition goes from $reduced_start-$reduced_end when reduced, and $full_partitions{$partition}->{'START'}-$full_partitions{$partition}->{'END'} when expanded.\n";
 	}
 	print "Alignment has been broken down into ",(scalar(keys %full_partitions))," total partitions.\n";
 
-	# Output potentially useful information on MDL's partitioning
+	# Output potentially useful information on partitioning
 	open(my $stats_file, '>', $align_root_no_ext."-stats.csv");	
 	print {$stats_file} "reduced_start, reduced_end, full_start, full_end,\n";
 	foreach my $partition (sort { $a <=> $b } keys %stats) {
@@ -1108,9 +1102,8 @@ sub write_partitions {
 	my @gene_file_names = glob("$align_root_no_ext-*-*.nex");
 	@gene_file_names = sort { local $a = $a; local $b = $b; $a =~ s/.*-(\d+).nex$/$1/; $b =~ s/.*-(\d+).nex$/$1/; $a <=> $b } @gene_file_names;
 
+	# Tarball and zip the resulting aligments
 	print "Compressing and archiving resulting partitions... ";
-#	system("tar czf $align_root_no_ext-genes.tar.gz @gene_file_names --remove-files");
-#	system("mv $align_root_no_ext-genes.tar.gz ..");
 	system("tar czf $align_root_no_ext.tar.gz @gene_file_names --remove-files");
 	system("mv $align_root_no_ext.tar.gz ..");
 	print "done.\n";
@@ -1131,6 +1124,7 @@ sub write_partition {
 
 	my $nchar = $end - $start;
 
+	# Output file name
 	my $file_name = $gene_dir.$align_root_no_ext."-$start-$string_end.nex";
 	unlink($file_name) if (-e $file_name);
 
@@ -1143,6 +1137,7 @@ sub write_partition {
 	print {$out} "#NEXUS\nbegin data;\n dimensions ntax=".scalar(@taxa)." nchar=$nchar;\n ";
 	print {$out} "format datatype=dna interleave=yes gap=- missing=?;\n matrix\n";
 
+	# Output the data matrix
 	for (my $i = 0; $i < $nchar; $i += $line_length) {
 		for (my $j = 0; $j < scalar(@taxa); $j++) {
 			my $taxon = $taxa[$j];
@@ -1161,6 +1156,7 @@ sub write_partition {
 	print {$out} "\n ;\nend;";
 	close($out);
 
+	# Sanity check to see that each alignment has the proper number of characters
 	#print {$out} "begin paup;\ncstatus;\nend;\n";
 	#close($out);
 
@@ -1212,9 +1208,7 @@ sub client {
 	my @unlink;
 
 	# Change signal handling so killing the server kills these processes and cleans up
-	#$SIG{INT} = sub { unlink(@unlink) };
 	$SIG{CHLD} = 'IGNORE';
-	#$SIG{HUP}  = sub { unlink($0, $paup); kill -15, $$; exit(0); };
 	$SIG{HUP}  = sub { unlink($0, $paup); kill -15, $$; };
 	$SIG{TERM} = sub { unlink(@unlink); exit(0); };
 
@@ -1225,9 +1219,11 @@ sub client {
 	or exit(0); 
 	$sock->autoflush(1);
 
+	# Ask server for a job
 	print {$sock} "NEW: $ip\n";
 	while (chomp(my $response = <$sock>)) {
 
+		# Responses to potential server commands
 		if ($response =~ /CHDIR: (.*)/) {
 			chdir($1);
 		}
@@ -1278,7 +1274,6 @@ sub client {
 		foreach my $pid (@pids) {
 			waitpid($pid, 0);
 		}
-
 		unlink($0, $paup, glob("*-reduced-*.nex"));
 	}
 	
@@ -1294,8 +1289,7 @@ sub parallelize {
 	my $total = $settings->{'TOTAL'};
 
 	# Methods which can be parallelized by this method
-	my %actions = ( 'run_mdl_block'             => \&run_mdl_block,
-					'write_partition'           => \&write_partition,
+	my %actions = ( 'write_partition'           => \&write_partition,
 					'write_nexus_file'          => \&write_nexus_file,
 					'write_nexus_file_reduced'  => \&write_nexus_file_reduced);
 
@@ -1306,7 +1300,6 @@ sub parallelize {
 
 		# Determine how many processes are currently running
 		foreach my $index (reverse(0 .. $#childPIDs)) {
-
 			my $childPID = $childPIDs[$index];
 			if (kill 0, $childPID) {
 				$running_forks++;
@@ -1347,7 +1340,6 @@ sub parallelize_with_return {
 
 	# Methods which can be parallelized by this method
 	my %actions = ( 'paup_cstatus' => \&paup_cstatus,
-	                'tnt_info'     => \&tnt_info,
 					'get_informative' => \&get_informative);
 
 	my $select = new IO::Select; 
@@ -1412,6 +1404,7 @@ sub parallelize_with_return {
 sub get_num_digits {
 	my $settings = shift;
 
+	# Number we want to get the digits of useful for nicely formatted printf output
 	my $number = $settings->{'NUMBER'};
 
 	my $digits = 1;
@@ -1424,6 +1417,9 @@ sub get_num_digits {
 }
 
 sub get_free_cpus {
+
+	# Set to user-specified value if present
+	return $max_forks if (defined($max_forks));
 
 	my $os_name = $^O;
 
@@ -1469,36 +1465,6 @@ sub get_free_cpus {
 	
 	return $free_cpus;
 }
-
-#sub get_free_cpus {
-#
-#	if ($no_forks) {
-#		return 1; # assume that at least one cpu is free
-#	}
-#	else {
-#
-#		# Returns a two-member array containing cpu usage observed by the program top,
-#		# command is run twice as top's first output is usually inaccurate
-#		chomp(my @percent_free_cpu = `top -bn2d0.05 | grep "Cpu(s)"`);
-#
-#		my $percent_free_cpu = pop(@percent_free_cpu);
-#		my $test = $percent_free_cpu;
-#		#$percent_free_cpu =~ s/.*?(\d+\.\d)%ni,\s*(\d+\.\d)%id.*/$1 + $2/; # also includes %nice as free 
-#		$percent_free_cpu =~ s/.*?(\d+\.\d)\s*%?ni,\s*(\d+\.\d)\s*%?id.*/$1 + $2/; # also includes %nice as free 
-#		$percent_free_cpu = eval($percent_free_cpu);
-#
-#		my $total_cpus = `grep 'cpu' /proc/stat | wc -l` - 1;
-#		die "$test\n" if (!defined($percent_free_cpu));
-#
-#		my $free_cpus = ceil($total_cpus * $percent_free_cpu / 100);
-#
-#		if ($free_cpus == 0) {
-#			$free_cpus = 1; # assume that at least one cpu can be used
-#		}
-#		
-#		return $free_cpus;
-#	}
-#}
 
 sub secs_to_readable {
 	my $settings = shift;
@@ -1568,22 +1534,13 @@ sub clean_up {
 	my $current_dir = getcwd();
 
 	chdir($project_name);
-#	chdir($alignment_root);
-#	unlink(glob($gene_dir."$alignment_name*"));
 	unlink(glob($score_dir."$align_root_no_ext*"));
-#	#unlink(glob($partition_dir."$alignment_name*"));
-#	unlink(glob($alignment_name."-unreduced-*"));
 
 	if ($remove_dirs) {
 		rmdir($gene_dir);
 		rmdir($score_dir);
-		#rmdir($partition_dir);
 	}
 	chdir($current_dir);
-}
-
-sub usage {
-	return "Usage: alignment-breakdown.pl [ALIGNMENT] [-b MINIMUM BLOCK LENGTH]\n";
 }
 
 sub run_cmd {
@@ -1614,10 +1571,6 @@ sub logger {
 	print "$time $msg\n"; 
 }
 
-sub help {
-	return "alignment-breakdown.pl help\n";
-}
-
 sub check_path_for_exec {
 	my $exec = shift;
 	
@@ -1632,4 +1585,37 @@ sub check_path_for_exec {
 
 	die "Could not find the following executable: '$exec'. This script requires this program in your path.\n" if (!defined($exec_path));
 	return $exec_path;
+}
+
+sub usage {
+	return "Usage: alignment-breakdown.pl [ALIGNMENT FILE] [-b MINIMUM BLOCK LENGTH]\n";
+}
+
+sub help {
+print <<EOF; 
+@{[usage()]}
+Use Minimum Description Length (Ané 2011) to break a given alignment into blocks with homologous topologies.
+
+  -b, --block-size       sets the minimum number of parsimony-informative characters which can be found in a block (REQUIRED)
+  -f, --forced-break     forces a breakpoint after the specified number of parsimony-informative characters, these partitions 
+                         are then run independently this setting is recommended for very large alignments (default: none);
+  --gap-as-char          specify to treat gaps as informative characters in PAUP* parsimony analyses
+  -o, --out_dir          name of the directory to store output files in (default: "mdl-" + Unix time of script invocation)
+  -T, --n_threads        the number of forks ALL hosts running analyses can use concurrently (default: current number of free CPUs)
+  --machine-file         file name containing hosts to ssh onto and perform analyses on, passwordless login MUST be enabled
+                         for each host specified in this file
+  --port                 specifies the port to utilize on the server (Default: 10001)
+  --usage                display proper script invocation format
+  -h, --help             display this help and exit
+
+Examples:
+  perl alignment-breakdown.pl gene.fa -b 10 --machine-file hosts.txt     runs MDL using computers specified in hosts.txt on gene.fa, 
+                                                                         breaks can be placed every 10 parsimony-informative characters 
+  perl alignment-breakdown.pl chromosome.fa -b 10 -f 1000                runs MDL on chromosome.fa, a breakpoint will be placed every 1000
+                                                                         parsimony informative characters, within these, further breakpoints
+                                                                         can be placed every 10 parsimony-informative characters
+
+Mail bug reports and suggestions to <noah.stenz.github\@gmail.com>
+EOF
+exit(0);
 }

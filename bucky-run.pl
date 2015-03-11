@@ -46,8 +46,8 @@ my $input_is_dir = 0;
 my $invocation = "perl bucky-run.pl @ARGV";
 
 # Name of output directory
-#my $project_name = "alignment-breakdown-".time();
-my $project_name = "bucky-run-dir";
+my $project_name = "bucky-".time();
+#my $project_name = "bucky-run-dir";
 
 # BUCKy settings
 my $alpha = 1;
@@ -58,6 +58,10 @@ GetOptions(
 	"no-forks"          => \$no_forks,
 	"machine-file=s"    => \$machine_file_path,
 	"alpha|a=f"         => \$alpha,
+	"ngen|n=i"          => \$ngen,
+	"port=i"            => \$port,
+	"n-threads|T=i"     => \$max_forks,
+	"out-dir|o=s"       => \$project_name,
 	"server-ip=s"       => \&client, # for internal usage only
 	"help|h"            => sub { print &help; exit(0); },
 	"usage"             => sub { print &usage; exit(0); },
@@ -1144,10 +1148,30 @@ sub combine {
 	return @comb;
 }
 
-sub help {
-
+sub usage {
+	return "Usage: bucky-run.pl [MRBAYES TARBALL]\n";
 }
 
-sub usage {
+sub help {
+print <<EOF; 
+@{[usage()]}
+Parallel execution of BUCKy on all possible quartets in a given alignment
 
+  -a, --alpha            value of alpha to use when running BUCKy (default: 1)      
+  -n, --ngen             number of generations to run BUCKy MCMC chain (default: 1000000 generations)
+  -o, --out_dir          name of the directory to store output files in (default: "bucky-" + Unix time of script invocation)
+  -T, --n_threads        the number of forks ALL hosts running analyses can use concurrently (default: current number of free CPUs)
+  --machine-file         file name containing hosts to ssh onto and perform analyses on, passwordless login MUST be enabled
+                         for each host specified in this file
+  --port                 specifies the port to utilize on the server (Default: 10003)
+  -h, --help             display this help and exit
+  --usage                display proper script invocation format
+
+Examples:
+  perl bucky-run.pl align.mb.tar --machine-file hosts.txt     runs BUCKy using computers specified in hosts.txt using MrBayes output
+                                                              stored in align.mb.tar
+
+Mail bug reports and suggestions to <noah.stenz.github\@gmail.com>
+EOF
+exit(0);
 }

@@ -14,6 +14,9 @@ use Time::HiRes qw(time usleep);
 # Turn on autoflush
 $|++;
 
+# Maximum number of threads to use
+my $max_forks;
+
 # Server port
 my $port = 10002;
 
@@ -32,9 +35,6 @@ my $script_path = abs_path($0);
 # Where the script was called from
 my $initial_directory = $ENV{PWD};
 
-# General script settings
-my $no_forks;
-
 # Allow for reusing info from an old run
 my $input_is_dir = 0;
 
@@ -42,16 +42,18 @@ my $input_is_dir = 0;
 my $invocation = "perl mb-run.pl @ARGV";
 
 # Name of output directory
-#my $project_name = "alignment-breakdown-".time();
-my $project_name = "mb-run-dir";
+my $project_name = "mb-".time();
+#my $project_name = "mb-run-dir";
 
 # Read commandline settings
 GetOptions(
-	"no-forks"          => \$no_forks,
-	"mrbayes-block|m:s" => \$mb_block,
+	#"no-forks"          => \$no_forks,
+	"mb-block|m:s" => \$mb_block,
 	"machine-file:s"    => \$machine_file_path,
 	"check|c:f"         => \&check_nonconvergent,
 	"remove|r:f"        => \&remove_nonconvergent,
+	"n-threads|T"       => \$max_forks,
+	"port=i"            => \$port,
 	"server-ip:s"       => \&client, # for internal usage only
 	"help|h"            => sub { print &help; exit(0); },
 	"usage"             => sub { print &usage; exit(0); },
@@ -939,6 +941,8 @@ sub secs_to_readable {
 
 sub get_free_cpus {
 
+	return $max_forks if (defined($max_forks));
+
 	my $os_name = $^O;
 
 	# Returns a two-member array containing CPU usage observed by top,
@@ -1012,10 +1016,35 @@ sub check_path_for_exec {
 	return $exec_path;
 }
 
-sub help {
-
+sub usage {
+	return "Usage: mb-run.pl ([PARTITION TARBALL] [-m MRBAYES BLOCK]) || ([MRBAYES TARBALL] [-c THRESHOLD] || [-r THRESHOLD])\n";
 }
 
-sub usage {
+sub help {
+print <<EOF; 
+@{[usage()]}
+Parallel execution of MrBayes on a large dataset
 
+  -m, --mb-block      text file containing MrBayes commands to append to each input partition (REQUIRED)
+  -c, --check         outputs how many MrBayes runs standard deviation of split frequencies have reached the specified threshold
+  -r, --remove        removes MrBayes runs with standard deviation of split frequencies below the specified threshold
+  -o, --out_dir       name of the directory to store output files in (default: "mb-" + Unix time of script invocation)
+  -T, --n_threads     the number of forks ALL hosts running analyses can use concurrently (default: current number of free CPUs)
+  --machine-file      file name containing hosts to ssh onto and perform analyses on, passwordless login MUST be enabled
+                      for each host specified in this file
+  --port              specifies the port to utilize on the server (Default: 10002)
+  -h, --help          display this help and exit
+  --usage             display proper script invocation format
+
+Examples:
+  perl bucky-run.pl align.tgz -m bayes.txt --machine-file hosts.txt     runs MrBayes on each partition stored in align.tgz using 
+                                                                        parameters stored in bayes.txt on computers specified in hosts.txt
+  perl bucky-run.pl align.mb.tar --check 0.02                           prints which genes in align.mb.tar have MCMC chains which reached
+                                                                        a standard deviation of split frequencies below 0.02
+  perl bucky-run.pl align.mb.tar --remove 0.05                          removes genes in align.mb.tar that have MCMC chains which did not reach
+                                                                        a standard deviation of split frequencies of 0.05
+
+Mail bug reports and suggestions to <noah.stenz.github\@gmail.com>
+EOF
+exit(0);
 }
