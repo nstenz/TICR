@@ -165,22 +165,38 @@ sub parse_input {
 	if ($pid == 0) {
 		my $TO_PARENT = $pipe->writer();
 
-		# Open the input file
+#		# Open the input file
+#		open(my $align_file, '<', $align_root) 
+#			or die "Could not open '$align_root': $!\n";
+#		chomp(my @data = <$align_file>);
+#		close($align_file);
+		# Read first line of input file to determine formatting
+		my $first_line;
 		open(my $align_file, '<', $align_root) 
 			or die "Could not open '$align_root': $!\n";
-		chomp(my @data = <$align_file>);
+		while (my $line = <$align_file>) {
+			$first_line = $line;
+			last;
+		}
 		close($align_file);
 
 		# Determine whether file is in Nexus or FASTA format, then parse it
-		if ($data[0] =~ /#NEXUS/i) {
+		#if ($data[0] =~ /#NEXUS/i) {
+		if ($first_line =~ /#NEXUS/i) {
 			#print "Input file \"$alignment_path\" appears to be a  Nexus file.\n\n";
 			print "Input file '$align' appears to be a  Nexus file.\n";
-			parse_nexus({'ALIGN' => \%align, 'DATA' => \@data});
+			#parse_nexus({'ALIGN' => \%align, 'DATA' => \@data});
+			%align = parse_nexus($align_root);
 		}
-		elsif ($data[0] =~ /^>/) {
+		elsif ($first_line =~ /^>/) {
 			#print "Input file \"$alignment_path\" appears to be a FASTA file.\n\n";
 			print "Input file '$align' appears to be a FASTA file.\n";
-			parse_fasta({'ALIGN' => \%align, 'DATA' => \@data});
+			#parse_fasta({'ALIGN' => \%align, 'DATA' => \@data});
+			#parse_fasta({'ALIGN' => \%align, 'DATA' => \@data});
+			%align = parse_fasta($align_root);
+		}
+		else {
+			die "File format for '$align_root' is unrecognized.\n";
 		}
 
 		# Send sequence info back to parent
@@ -218,36 +234,80 @@ sub parse_input {
 #     DATA  - an array reference containing the entire contents of the Nexus file
 #     ALIGN - a reference to a hash which will have the alignment data stored with 
 #             taxa names as itskeys and the nucleotide data as values
+#sub parse_nexus {
+#	my $settings = shift;
+#
+#	my $align = $settings->{'ALIGN'};
+#
+#	# TODO: Rewrite this, pretty sure it isn't very good
+#	
+#	my $in_data_block = 0;
+#	my $in_data_matrix = 0;
+#	foreach my $line (@{$settings->{'DATA'}}) {
+#		if ($line =~ /Begin data;/i) {
+#			$in_data_block = 1;
+#		}
+#		elsif ($in_data_block && $line =~ /end;/i) {
+#			$in_data_block = 0;
+#		}
+#		elsif ($in_data_block && $line =~ /Matrix/i) {
+#			$in_data_matrix = 1;
+#		}
+#		elsif ($in_data_matrix && $line =~ /;/) {
+#			$in_data_matrix = 0;
+#		}
+#		elsif ($in_data_block && $in_data_matrix) {
+#			if ($line =~ /(\S+)\s+(\S+)/) {
+#				my $taxon = $1;
+#				my $alignment = $2;
+#				$align->{$taxon} .= $alignment;
+#			}
+#		}
+#	}
+#}
 sub parse_nexus {
-	my $settings = shift;
+	my $file_name = shift;
 
-	my $align = $settings->{'ALIGN'};
+	my $in_data_block;
+	my $in_data_matrix;
 
-	# TODO: Rewrite this, pretty sure it isn't very good
-	
-	my $in_data_block = 0;
-	my $in_data_matrix = 0;
-	foreach my $line (@{$settings->{'DATA'}}) {
-		if ($line =~ /Begin data;/i) {
-			$in_data_block = 1;
+	my %align;
+	open(my $file, "<", $file_name);
+	while (my $line = <$file>) {
+
+		# Start of data block
+		if ($line =~ /begin data;/i) {
+			$in_data_block++;
 		}
-		elsif ($in_data_block && $line =~ /end;/i) {
-			$in_data_block = 0;
+
+		# Start of data matrix
+		if ($line =~ /matrix/i && $in_data_block) {
+			$in_data_matrix++;
 		}
-		elsif ($in_data_block && $line =~ /Matrix/i) {
-			$in_data_matrix = 1;
-		}
-		elsif ($in_data_matrix && $line =~ /;/) {
-			$in_data_matrix = 0;
-		}
-		elsif ($in_data_block && $in_data_matrix) {
+
+		# In data matrix
+		if ($in_data_matrix) {
 			if ($line =~ /(\S+)\s+(\S+)/) {
-				my $taxon = $1;
-				my $alignment = $2;
-				$align->{$taxon} .= $alignment;
+				my ($taxon, $sequence) = ($1, $2);
+
+				# Concat allows for reading in multi-line nexus
+				$align{$taxon} .= $sequence;
 			}
+		} 
+		
+		# End of data matrix
+		if ($line =~ /;/ && $in_data_matrix) {
+			undef($in_data_matrix);
+		}
+
+		# End of data matrix
+		if ($line =~ /end;/i && $in_data_block) {
+			undef($in_data_block);
 		}
 	}
+	close($file);
+
+	return %align;
 }
 
 # Parses alignment data from a properly formatted FASTA file
@@ -255,21 +315,43 @@ sub parse_nexus {
 #     DATA  - an array reference containing the entire contents of the FASTA file
 #     ALIGN - a reference to a hash which will have the alignment data stored with 
 #             taxa names as its keys and the nucleotide data as values
+#sub parse_fasta {
+#	my $settings = shift;
+#
+#	my $align = $settings->{'ALIGN'};
+#	
+#	my $taxon;
+#	foreach my $line (@{$settings->{'DATA'}}) {
+#		if ($line =~ /^>(.*)/) {
+#			$taxon = $1;
+#		}
+#		else {
+#			$taxon =~ s/-/_/g;
+#			$align->{$taxon} .= $line;
+#		}
+#	}
+#}
 sub parse_fasta {
-	my $settings = shift;
+	my $filename = shift;
 
-	my $align = $settings->{'ALIGN'};
+	my %align;
+	open(my $alignment_file, '<', $filename) 
+		or die "Could not open '$filename': $!\n";
+	chomp(my @data = <$alignment_file>);
+	close($alignment_file);
 	
 	my $taxon;
-	foreach my $line (@{$settings->{'DATA'}}) {
+	foreach my $line (@data) {
+		#if ($line =~ /^>(\S+)/) {
 		if ($line =~ /^>(.*)/) {
 			$taxon = $1;
 		}
 		else {
 			$taxon =~ s/-/_/g;
-			$align->{$taxon} .= $line;
+			$align{$taxon} .= $line;
 		}
 	}
+	return %align;
 }
 
 # Writes a single Nexus file consisting of only parsimony-informative characters
