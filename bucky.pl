@@ -43,11 +43,11 @@ my $no_forks;
 my $input_is_dir = 0;
 
 # How the script was called
-my $invocation = "perl bucky-run.pl @ARGV";
+my $invocation = "perl bucky.pl @ARGV";
 
 # Name of output directory
 my $project_name = "bucky-".time();
-#my $project_name = "bucky-run-dir";
+#my $project_name = "bucky-dir";
 
 # BUCKy settings
 my $alpha = 1;
@@ -558,7 +558,7 @@ sub client {
 
 	# Determine file name of mbsum archive the client should use
 	my @ARGV = split(/\s+/, $invocation);
-	shift(@ARGV); shift(@ARGV); # remove "perl" and "bucky-run.pl"
+	shift(@ARGV); shift(@ARGV); # remove "perl" and "bucky.pl"
 	my $mbsum_archive = shift(@ARGV);
 
 	# Extract files from mbsum archive
@@ -1149,7 +1149,7 @@ sub combine {
 }
 
 sub usage {
-	return "Usage: bucky-run.pl [MRBAYES TARBALL]\n";
+	return "Usage: bucky.pl [MRBAYES TARBALL]\n";
 }
 
 sub help {
@@ -1159,8 +1159,8 @@ Parallel execution of BUCKy on all possible quartets in a given alignment
 
   -a, --alpha            value of alpha to use when running BUCKy (default: 1)      
   -n, --ngen             number of generations to run BUCKy MCMC chain (default: 1000000 generations)
-  -o, --out_dir          name of the directory to store output files in (default: "bucky-" + Unix time of script invocation)
-  -T, --n_threads        the number of forks ALL hosts running analyses can use concurrently (default: current number of free CPUs)
+  -o, --out-dir          name of the directory to store output files in (default: "bucky-" + Unix time of script invocation)
+  -T, --n-threads        the number of forks ALL hosts running analyses can use concurrently (default: current number of free CPUs)
   --machine-file         file name containing hosts to ssh onto and perform analyses on, passwordless login MUST be enabled
                          for each host specified in this file
   --port                 specifies the port to utilize on the server (Default: 10003)
@@ -1168,8 +1168,8 @@ Parallel execution of BUCKy on all possible quartets in a given alignment
   --usage                display proper script invocation format
 
 Examples:
-  perl bucky-run.pl align.mb.tar --machine-file hosts.txt     runs BUCKy using computers specified in hosts.txt using MrBayes output
-                                                              stored in align.mb.tar
+  perl bucky.pl align.mb.tar --machine-file hosts.txt     runs BUCKy using computers specified in hosts.txt using MrBayes output
+                                                          stored in align.mb.tar
 
 Mail bug reports and suggestions to <noah.stenz.github\@gmail.com>
 EOF

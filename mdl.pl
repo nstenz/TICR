@@ -49,11 +49,11 @@ my $min_block_size;
 my $num_pars_inf_chars;
 
 # How the script was called
-my $invocation = "perl alignment-breakdown.pl @ARGV";
+my $invocation = "perl mdl.pl @ARGV";
 
 # Name of output directory
 my $project_name = "mdl-".time();
-#my $project_name = "alignment-breakdown-dir";
+#my $project_name = "mdl-dir";
 
 # Read commandline settings
 GetOptions(
@@ -1670,7 +1670,7 @@ sub check_path_for_exec {
 }
 
 sub usage {
-	return "Usage: alignment-breakdown.pl [ALIGNMENT FILE] [-b MINIMUM BLOCK LENGTH]\n";
+	return "Usage: mdl.pl [ALIGNMENT FILE] [-b MINIMUM BLOCK LENGTH]\n";
 }
 
 sub help {
@@ -1682,8 +1682,8 @@ Use Minimum Description Length (Ané 2011) to break a given alignment into block
   -f, --forced-break     forces a breakpoint after the specified number of parsimony-informative characters, these partitions 
                          are then run independently this setting is recommended for very large alignments (default: none);
   --gap-as-char          specify to treat gaps as informative characters in PAUP* parsimony analyses
-  -o, --out_dir          name of the directory to store output files in (default: "mdl-" + Unix time of script invocation)
-  -T, --n_threads        the number of forks ALL hosts running analyses can use concurrently (default: current number of free CPUs)
+  -o, --out-dir          name of the directory to store output files in (default: "mdl-" + Unix time of script invocation)
+  -T, --n-threads        the number of forks ALL hosts running analyses can use concurrently (default: current number of free CPUs)
   --machine-file         file name containing hosts to ssh onto and perform analyses on, passwordless login MUST be enabled
                          for each host specified in this file
   --port                 specifies the port to utilize on the server (Default: 10001)
@@ -1691,11 +1691,11 @@ Use Minimum Description Length (Ané 2011) to break a given alignment into block
   -h, --help             display this help and exit
 
 Examples:
-  perl alignment-breakdown.pl gene.fa -b 10 --machine-file hosts.txt     runs MDL using computers specified in hosts.txt on gene.fa, 
-                                                                         breaks can be placed every 10 parsimony-informative characters 
-  perl alignment-breakdown.pl chromosome.fa -b 10 -f 1000                runs MDL on chromosome.fa, a breakpoint will be placed every 1000
-                                                                         parsimony informative characters, within these, further breakpoints
-                                                                         can be placed every 10 parsimony-informative characters
+  perl mdl.pl gene.fa -b 10 --machine-file hosts.txt     runs MDL using computers specified in hosts.txt on gene.fa, breaks can be 
+                                                         placed every 10 parsimony-informative characters 
+  perl mdl.pl chromosome.fa -b 10 -f 1000                runs MDL on chromosome.fa, a breakpoint will be placed every 1000 parsimony 
+                                                         informative characters, within these, further breakpoints can be placed 
+                                                         every 10 parsimony-informative characters
 
 Mail bug reports and suggestions to <noah.stenz.github\@gmail.com>
 EOF
