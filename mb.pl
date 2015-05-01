@@ -69,6 +69,7 @@ my $archive = shift(@ARGV);
 die "You must specify an archive file.\n\n", &usage if (!defined($archive));
 die "Could not locate '$archive', perhaps you made a typo.\n" if (!-e $archive);
 die "You specified a MrBayes run archive instead of an MDL gene archive.\n" if ($archive =~ /\.mb\.tar$/);
+die "Could not locate '$machine_file_path'.\n" if (defined($machine_file_path) && !-e $machine_file_path);
 die "You must specify a file containing a valid MrBayes block which will be appended to each gene.\n\n", &usage if (!defined($mb_block));
 die "Could not locate '$mb_block', perhaps you made a typo.\n\n" if (!-e $mb_block);
 
@@ -77,7 +78,6 @@ $input_is_dir++ if (-d $archive);
 
 # Determine which machines we will run the analyses on
 if (defined($machine_file_path)) {
-	die "Could not locate '$machine_file_path'.\n" if (!-e $machine_file_path);
 	print "Fetching machine names listed in '$machine_file_path'...\n";
 	open(my $machine_file, '<', $machine_file_path);
 	chomp(@machines = <$machine_file>);

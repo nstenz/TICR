@@ -77,13 +77,13 @@ my $archive = shift(@ARGV);
 # Some error checking
 die "You must specify an archive file.\n\n", &usage if (!defined($archive));
 die "Could not locate '$archive', perhaps you made a typo.\n" if (!-e $archive);
+die "Could not locate '$machine_file_path'.\n" if (defined($machine_file_path) && !-e $machine_file_path);
 
 # Input is a previous run directory, reuse information
 $input_is_dir++ if (-d $archive);
 
 # Determine which machines we will run the analyses on
 if (defined($machine_file_path)) {
-	die "Could not locate '$machine_file_path'.\n" if (!-e $machine_file_path);
 	print "Fetching machine names listed in '$machine_file_path'...\n";
 	open(my $machine_file, '<', $machine_file_path);
 	chomp(@machines = <$machine_file>);

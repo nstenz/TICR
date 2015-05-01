@@ -83,9 +83,10 @@ my $align = shift(@ARGV);
 # Some error checking
 die "You must specify an alignment file.\n\n", &usage if (!defined($align));
 die "Could not locate '$align', perhaps you made a typo.\n" if (!-e $align);
-die "You must specify a minimum block length (-b).\n\n",    &usage if (!defined($min_block_size));
+die "You must specify a minimum block length (-b).\n\n", &usage if (!defined($min_block_size));
 die "The minimum block size must be greater than 0!\n" if ($min_block_size <= 0);
 die "Forced breakpoints can't be negative length!\n" if (defined($forced_break) && $forced_break <= 0);
+die "Could not locate '$machine_file_path'.\n" if (defined($machine_file_path) && !-e $machine_file_path);
 die "The minimum block size can not be greater than or equal to the forced breakpoint length.\n" if (defined($forced_break) && $min_block_size >= $forced_break);
 
 print "WARNING: It is not recommended to have forced breakpoints placed so frequently unless you are analyzing a very large dataset.\n" if (defined($forced_break) && $forced_break <= 100);
@@ -93,7 +94,8 @@ print "WARNING: It is not recommended to have forced breakpoints placed so frequ
 # Adjust MDL settings depending on user input
 #$gap_isnt_char = 1 if (defined($exclude_gaps));
 $gap_as_char = 0 if (defined($exclude_gaps));
-$nletters++      if (!defined($exclude_gaps));
+#$nletters++      if (!defined($exclude_gaps));
+$nletters++      if (!defined($exclude_gaps) && $gap_as_char);
 
 # Extract name information from input file
 (my $align_root = $align) =~ s/.*\/(.*)/$1/;
@@ -109,7 +111,6 @@ run_cmd("ln -s $align_abs_path $project_name/$align_root") if (! -e "$project_na
 
 # Determine which machines we will run the analyses on
 if (defined($machine_file_path)) {
-	die "Could not locate '$machine_file_path'.\n" if (!-e $machine_file_path);
 	print "Fetching machine names listed in '$machine_file_path'...\n";
 	open(my $machine_file, '<', $machine_file_path);
 	chomp(@machines = <$machine_file>);
@@ -137,11 +138,13 @@ print "\nScript was called as follows:\n$invocation\n";
 # Output some more useful information on current settings
 if (defined($forced_break)) {
 	print "\nWill now proceed to breakdown '$align' using a forced breakpoint after ";
-	print "",(($forced_break == 1) ? "every character, " : "every $forced_break characters, "), "and a minimum block size of $min_block_size.\n";
+	print "",(($forced_break == 1) ? "every character, " : "every $forced_break characters, "), "and a minimum block size of $min_block_size.\n\n";
 }
 else {
-	print "\nWill now proceed to breakdown '$align' using a minimum block size of $min_block_size.\n";
+	print "\nWill now proceed to breakdown '$align' using a minimum block size of $min_block_size.\n\n";
 }
+print "PAUP settings: gaps will ".((!defined($gap_as_char)) ? "not " : "")."be treated ".
+      "as characters, missing and ambiguous sites will ".((defined($exclude_gaps)) ? "not " : "")."be included.\n";
 print "MDL settings: nletters = $nletters, nbestpart = $nbestpart, ngroupmax = $ngroupmax.\n\n";
 
 # Relative site numbers of PI characters
@@ -150,9 +153,10 @@ my @locations;
 # Absolute site numbers of PI characters
 my @translated_locations;
 
-#parse_input();
 my %align = parse_input();
 get_informative_chars({'ALIGN' => \%align});
+undef(%align);
+
 run_mdl();
 
 sub parse_input {
@@ -160,16 +164,12 @@ sub parse_input {
 	my $select = new IO::Select; 
 	my $pid = fork();
 
-	my %align;
 	# By handling the file reading within a fork we save some RAM
+
+	my %align;
 	if ($pid == 0) {
 		my $TO_PARENT = $pipe->writer();
 
-#		# Open the input file
-#		open(my $align_file, '<', $align_root) 
-#			or die "Could not open '$align_root': $!\n";
-#		chomp(my @data = <$align_file>);
-#		close($align_file);
 		# Read first line of input file to determine formatting
 		my $first_line;
 		open(my $align_file, '<', $align_root) 
@@ -181,18 +181,13 @@ sub parse_input {
 		close($align_file);
 
 		# Determine whether file is in Nexus or FASTA format, then parse it
-		#if ($data[0] =~ /#NEXUS/i) {
 		if ($first_line =~ /#NEXUS/i) {
 			#print "Input file \"$alignment_path\" appears to be a  Nexus file.\n\n";
 			print "Input file '$align' appears to be a  Nexus file.\n";
-			#parse_nexus({'ALIGN' => \%align, 'DATA' => \@data});
 			%align = parse_nexus($align_root);
 		}
 		elsif ($first_line =~ /^>/) {
-			#print "Input file \"$alignment_path\" appears to be a FASTA file.\n\n";
 			print "Input file '$align' appears to be a FASTA file.\n";
-			#parse_fasta({'ALIGN' => \%align, 'DATA' => \@data});
-			#parse_fasta({'ALIGN' => \%align, 'DATA' => \@data});
 			%align = parse_fasta($align_root);
 		}
 		else {
@@ -234,37 +229,6 @@ sub parse_input {
 #     DATA  - an array reference containing the entire contents of the Nexus file
 #     ALIGN - a reference to a hash which will have the alignment data stored with 
 #             taxa names as itskeys and the nucleotide data as values
-#sub parse_nexus {
-#	my $settings = shift;
-#
-#	my $align = $settings->{'ALIGN'};
-#
-#	# TODO: Rewrite this, pretty sure it isn't very good
-#	
-#	my $in_data_block = 0;
-#	my $in_data_matrix = 0;
-#	foreach my $line (@{$settings->{'DATA'}}) {
-#		if ($line =~ /Begin data;/i) {
-#			$in_data_block = 1;
-#		}
-#		elsif ($in_data_block && $line =~ /end;/i) {
-#			$in_data_block = 0;
-#		}
-#		elsif ($in_data_block && $line =~ /Matrix/i) {
-#			$in_data_matrix = 1;
-#		}
-#		elsif ($in_data_matrix && $line =~ /;/) {
-#			$in_data_matrix = 0;
-#		}
-#		elsif ($in_data_block && $in_data_matrix) {
-#			if ($line =~ /(\S+)\s+(\S+)/) {
-#				my $taxon = $1;
-#				my $alignment = $2;
-#				$align->{$taxon} .= $alignment;
-#			}
-#		}
-#	}
-#}
 sub parse_nexus {
 	my $file_name = shift;
 
@@ -315,42 +279,29 @@ sub parse_nexus {
 #     DATA  - an array reference containing the entire contents of the FASTA file
 #     ALIGN - a reference to a hash which will have the alignment data stored with 
 #             taxa names as its keys and the nucleotide data as values
-#sub parse_fasta {
-#	my $settings = shift;
-#
-#	my $align = $settings->{'ALIGN'};
-#	
-#	my $taxon;
-#	foreach my $line (@{$settings->{'DATA'}}) {
-#		if ($line =~ /^>(.*)/) {
-#			$taxon = $1;
-#		}
-#		else {
-#			$taxon =~ s/-/_/g;
-#			$align->{$taxon} .= $line;
-#		}
-#	}
-#}
 sub parse_fasta {
 	my $filename = shift;
 
+	my $taxon;
 	my %align;
 	open(my $alignment_file, '<', $filename) 
 		or die "Could not open '$filename': $!\n";
-	chomp(my @data = <$alignment_file>);
-	close($alignment_file);
-	
-	my $taxon;
-	foreach my $line (@data) {
-		#if ($line =~ /^>(\S+)/) {
+
+	while (my $line = <$alignment_file>) {
+		chomp($line);
+
+		# Taxon name
 		if ($line =~ /^>(.*)/) {
 			$taxon = $1;
 		}
 		else {
+			# Taxon sequence
 			$taxon =~ s/-/_/g;
 			$align{$taxon} .= $line;
 		}
 	}
+	close($alignment_file);
+	
 	return %align;
 }
 
@@ -393,17 +344,6 @@ sub write_nexus_file_reduced {
 		}
 		print {$out} "\n";
 	}	
-
-	# TODO: Allow continuation of a failed run by adding the absolute 
-	# positions as a comment on the bottom for later scripts.
-
-#	print {$out} " ;\nend;\n[Absolute Character Locations:]\n[";
-#	for (my $i = 0; $i < $forced_break; $i++) {
-#		#print {$out} @{$locations}[$i +  ($number * $forced_break)],"\t";
-#		print {$out} $locations[$i +  ($number * $forced_break)],"\t";
-#	}
-#	print {$out} "]\n";
-
 	print {$out} " ;\nend;\n";
 	close($out);
 }
@@ -502,29 +442,49 @@ sub paup_cstatus {
 	close($std_out);
 
 	# Read the resulting log with sysread (faster) 
-	my $log_contents;
-	open(my $log, "<", $log_path) 
-		or die "Could not open '$log_path': $!.\n";
-	sysread($log, $log_contents, -s $log_path);
-	close($log) and unlink($log_path);
+#	my $log_contents;
+#	open(my $log, "<", $log_path) 
+#		or die "Could not open '$log_path': $!.\n";
+#	sysread($log, $log_contents, -s $log_path);
+#	close($log) and unlink($log_path);
+#
+#	my @log_lines = split("\n", $log_contents);
+#
+#	# Use map to create an array of only parsimony-informative sites
+#	my @filtered_log = grep(/^\d+\s+|(Data matrix)/, @log_lines);
+#	my @locations = map { my @line = split(" ", $_);  ($line[2] eq '-' && $line[3] ne 'X') ? $line[0] : () } @filtered_log;
+#
+#	# Determine total number of characters in the alignment
+#	my $total_chars;
+#	my $info_line = shift(@filtered_log);
+#	if ($info_line =~ /data matrix has \d+ taxa, (\d+) characters/i) { 
+#		$total_chars = $1;
+#	}
+#
+#	# Send the locations of the parsimony-informative characters to the parent.
+#	foreach my $location (@locations) {
+#		print {$$TO_PARENT} "$number-$total_chars--$location\n";
+#	}
 
-	my @log_lines = split("\n", $log_contents);
-
-	# Use map to create an array of only parsimony-informative sites
-	my @filtered_log = grep(/^\d+\s+|(Data matrix)/, @log_lines);
-	my @locations = map { my @line = split(" ", $_);  ($line[2] eq '-' && $line[3] ne 'X') ? $line[0] : () } @filtered_log;
-
-	# Determine total number of characters in the alignment
 	my $total_chars;
-	my $info_line = shift(@filtered_log);
-	if ($info_line =~ /data matrix has \d+ taxa, (\d+) characters/i) { 
-		$total_chars = $1;
-	}
+	open(my $log, "<", $log_path);
+	while (my $line = <$log>) {
 
-	# Send the locations of the parsimony-informative characters to the parent.
-	foreach my $location (@locations) {
-		print {$$TO_PARENT} "$number-$total_chars--$location\n";
+		# Determine total number of characters in the alignment
+		if ($line =~ /data matrix has \d+ taxa, (\d+) characters/i) { 
+			$total_chars = $1;
+		}
+		# Line containing character states
+		elsif ($line =~ /^\d+\s+/) {
+			my @line = split(" ", $line);	
+
+			# Indicates that character is parsimony-informative
+			if ($line[2] eq '-' && $line[3] ne 'X') {
+				print {$$TO_PARENT} "$number-$total_chars--$line[0]\n";
+			}
+		}
 	}
+	close($log);
 
 	# Cleanup
 	unlink($log_path);
@@ -708,12 +668,12 @@ sub run_mdl {
 
 			# Send reduced alignments to remote machines
 			if ($machine ne $server_hostname) {
-				system("scp -q *-reduced-* $machine.:/tmp");
+				system("scp -q $align_root_no_ext-reduced-*.nex $machine:/tmp");
 			}
 
 			# Execute this perl script on the given machine
 			# -tt forces pseudo-terminal allocation and lets us stop remote processes
-			exec("ssh", "-tt", "$machine", "perl", "/tmp/$script_name", "--server-ip=$server_ip");
+			exec("ssh", "-tt", $machine, "perl", "/tmp/$script_name", "--server-ip=$server_ip");
 
 			exit(0);
 		}
@@ -893,6 +853,7 @@ sub run_mdl {
 	print "Total execution time: ", secs_to_readable({'TIME' => time() - $time}), "\n\n";
 
 	chdir($project_name);
+	%align = parse_input();
 
 	# Calculate number of taxa in alignment for MDL
 	my $ntax = scalar(keys %align);
@@ -1178,17 +1139,48 @@ sub write_partitions {
 				 'MAX_FORKS' => $free_cpus, 
 				 'TOTAL' => scalar(keys %full_partitions)});
 
+	my @reduced_files = glob("$align_root_no_ext-reduced-*.nex");
+	print "\nCompressing and archiving parsimony-informative character only alignments... ";
+	system("tar czf $align_root_no_ext-reduced.tar.gz @reduced_files --remove-files");
+	system("mv $align_root_no_ext-reduced.tar.gz ..");
+	print "done.\n";
+
 	chdir($gene_dir);	
 
 	# Compress and archive results
 	my @gene_file_names = glob("$align_root_no_ext-*-*.nex");
 	@gene_file_names = sort { local $a = $a; local $b = $b; $a =~ s/.*-(\d+).nex$/$1/; $b =~ s/.*-(\d+).nex$/$1/; $a <=> $b } @gene_file_names;
 
-	# Tarball and zip the resulting aligments
-	print "Compressing and archiving resulting partitions... ";
+	# Tarball and zip the resulting sequence partitions
+	print "Compressing and archiving partition sequence files... ";
 	system("tar czf $align_root_no_ext.tar.gz @gene_file_names --remove-files");
 	system("mv $align_root_no_ext.tar.gz ..");
 	print "done.\n";
+
+	# Tarball and zip the mdl partitioning files
+	chdir("..");
+	chdir($partition_dir);
+	my @partitioning_files = glob("$align_root_no_ext*.partitions*");
+	print "Compressing and archiving resulting mdl partitioning output... ";
+	system("tar czf $align_root_no_ext-partitions.tar.gz @partitioning_files --remove-files");
+	system("mv $align_root_no_ext-partitions.tar.gz ..");
+	print "done.\n";
+
+	# Tarball and zip the parismony scores for each possible partition
+	chdir("..");
+	chdir($score_dir);
+	my @score_files = glob("$align_root_no_ext-all-scores-*");
+	print "Compressing and archiving individual parsimony scores for each block... ";
+	system("tar czf $align_root_no_ext-scores.tar.gz @score_files --remove-files");
+	system("mv $align_root_no_ext-scores.tar.gz ..");
+	print "done.\n";
+
+	# Remove the now empty directories
+	chdir("..");
+	rmdir($gene_dir);
+	rmdir($score_dir);
+	rmdir($partition_dir);
+
 }
 
 sub write_partition {
@@ -1292,7 +1284,7 @@ sub client {
 	# Change signal handling so killing the server kills these processes and cleans up
 	$SIG{CHLD} = 'IGNORE';
 	$SIG{HUP}  = sub { unlink($0, $paup); kill -15, $$; };
-	$SIG{TERM} = sub { unlink(@unlink); exit(0); };
+	$SIG{TERM} = sub { unlink(@unlink); unlink(glob("*-reduced-*.nex")); exit(0); };
 
 	# Connect to the server
 	my $sock = new IO::Socket::INET(
