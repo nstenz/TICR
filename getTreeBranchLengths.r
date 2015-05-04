@@ -1,3 +1,5 @@
+#!/usr/bin/Rscript
+
 # input:  quartet CFs in csv file, and tree in nexus file.
 # output: same tree topology, but branch lengths in coalescent units
 #         u = -log(3/2 * (1 - mean CF of all quartets defining the branch))
