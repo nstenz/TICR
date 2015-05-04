@@ -57,8 +57,8 @@ Including this option as seen above would force a breakpoint after every 10,000t
 ### Command Line Options
 The following table describes the support command-line optionswhich can be specified to influence the script execution:
 
-| Option Flag(s) | Option Descripton | Default |
-|:-|:-:|:-:|
+| Option Flag(s) | Option Description | Default |
+|:--|:--:|:--:|
 | -b, --block-size | sets the minimum number of parsimony-informative characters which can be found in a block | none |
 | -f, --forced-break | forces a breakpoint after the specified number of parsimony-informative characters, these partitions are then run independenly | none |
 | --gap-as-char | specify to treat gaps as informative characters in PAUP* parsimony analyses| gaps not informative |
@@ -130,8 +130,8 @@ mb.pl chr1-mb -r 0.05
 ### Command Line Options
 The following table describes the support command-line optionswhich can be specified to influence the script execution:
 
-| Option Flag(s) | Option Descripton | Default |
-|:-|:-:|:-:|
+| Option Flag(s) | Option Description | Default |
+|:--|:--:|:--:|
 | -m, --mb-block | text file containing MrBayes commands to append to each input partition | none |
 | -c, --check | outputs how many MrBayes runs standard deviation of split frequencies have reached the specified threshold | N/A |
 | -r, --remove | removes MrBayes runs with standard deviation of split frequencies below the specified threshold | N/A |
@@ -183,8 +183,8 @@ The following table describes the support command-line optionswhich can be speci
   -h, --help             display this help and exit
   --usage                display proper script invocation format
 
-| Option Flag(s) | Option Descripton | Default |
-|:-|:-:|:-:|
+| Option Flag(s) | Option Description | Default |
+|:--|:--:|:--:|
 | -a, --alpha | value of alpha to use when running BUCKy | 1 |
 | -n, --ngen | number of generations to run BUCKy MCMC chain | 1000000 generations |
 | -r, --remove | removes MrBayes runs with standard deviation of split frequencies below the specified threshold | N/A |
