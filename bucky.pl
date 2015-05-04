@@ -46,7 +46,7 @@ my $input_is_dir = 0;
 my $invocation = "perl bucky.pl @ARGV";
 
 # Name of output directory
-my $project_name = "bucky-".time();
+my $project_name = "bucky-".int(time());
 #my $project_name = "bucky-dir";
 
 # BUCKy settings

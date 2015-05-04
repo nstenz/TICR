@@ -52,7 +52,7 @@ my $num_pars_inf_chars;
 my $invocation = "perl mdl.pl @ARGV";
 
 # Name of output directory
-my $project_name = "mdl-".time();
+my $project_name = "mdl-".int(time());
 #my $project_name = "mdl-dir";
 
 # Read commandline settings

@@ -42,7 +42,7 @@ my $input_is_dir = 0;
 my $invocation = "perl mb.pl @ARGV";
 
 # Name of output directory
-my $project_name = "mb-".time();
+my $project_name = "mb-".int(time());
 #my $project_name = "mb-dir";
 
 # Read commandline settings
