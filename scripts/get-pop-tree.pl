@@ -113,7 +113,7 @@ open($qmc_output_file, ">", $qmc_output);
 print {$qmc_output_file} $tree,"\n";
 close($qmc_output_file);
 
-sub get_QMCN_exec {
+sub get_QMC_exec {
 	my $OS = $^O;
 	my %execs = ('linux' => 'find-cut-Linux-64', 'darwin' => 'find-cut-Mac');
 
