@@ -111,7 +111,7 @@ The terminal output of each MrBayes run is by default stored by this script, if 
 mb.pl chromosome1.tar.gz -m bayes.txt -o chr1-mb
 ```
 
-this information, as well as the resulting tree and parameter files for each MrBayes analysis, would be expected to be located a file named 'chromosome1.mb.tar'.
+this information, as well as the resulting tree and parameter files for each MrBayes analysis, would be expected to be located in a tarball named 'chromosome1.mb.tar'.
 
 This output tarball can be parsed to determine the final standard deviation of split frequencies and roughly estimate whether or not the MCMC analyses which they describe reached convergence. If the user simply wants to check which partitions meet a specific threshold, they can use the -c or --check option like so:
 
