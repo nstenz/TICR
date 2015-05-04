@@ -173,24 +173,13 @@ bucky.pl chr1-bucky
 ### Command Line Options
 The following table describes the support command-line optionswhich can be specified to influence the script execution:
 
-  -a, --alpha            value of alpha to use when running BUCKy (default: 1)      
-  -n, --ngen             number of generations to run BUCKy MCMC chain (default: 1000000 generations)
-  -o, --out-dir          name of the directory to store output files in (default: "bucky-" + Unix time of script invocation)
-  -T, --n-threads        the number of forks ALL hosts running analyses can use concurrently (default: current number of free CPUs)
-  --machine-file         file name containing hosts to ssh onto and perform analyses on, passwordless login MUST be enabled
-                         for each host specified in this file
-  --port                 specifies the port to utilize on the server (Default: 10003)
-  -h, --help             display this help and exit
-  --usage                display proper script invocation format
-
 | Option Flag(s) | Option Description | Default |
 |:--|:--:|:--:|
 | -a, --alpha | value of alpha to use when running BUCKy | 1 |
 | -n, --ngen | number of generations to run BUCKy MCMC chain | 1000000 generations |
-| -r, --remove | removes MrBayes runs with standard deviation of split frequencies below the specified threshold | N/A |
 | --machine-file | file name containing hosts to ssh onto and perform analyses on, passwordless login MUST be enabled | none |
-| --port | specifies the port to utilize on the server | 10002 |
-| -o, --out-dir | name of the directory to store output files in | "mb-" + Unix time of script invocation) |
+| --port | specifies the port to utilize on the server | 10003 |
+| -o, --out-dir | name of the directory to store output files in | "bucky-" + Unix time of script invocation) |
 | -T, --n-threads | the number of forks ALL hosts running analyses can use concurrently | current number of free CPUs |
 | -h, --help |display help and exit | N/A |
 
