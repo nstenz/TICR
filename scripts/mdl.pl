@@ -1142,7 +1142,6 @@ sub write_partitions {
 	my @reduced_files = glob("$align_root_no_ext-reduced-*.nex");
 	print "\nCompressing and archiving parsimony-informative character only alignments... ";
 	system("tar czf $align_root_no_ext-reduced.tar.gz @reduced_files --remove-files");
-	system("mv $align_root_no_ext-reduced.tar.gz ..");
 	print "done.\n";
 
 	chdir($gene_dir);	
