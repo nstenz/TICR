@@ -33,6 +33,9 @@ my $mb_block;
 # Where this script is located 
 my $script_path = abs_path($0);
 
+# Directory script was called from
+my $init_dir = abs_path(".");
+
 # Where the script was called from
 my $initial_directory = $ENV{PWD};
 
@@ -180,7 +183,7 @@ if (-e $bucky_archive && -e $quartet_output) {
 	# the tarball and csv have the same quartet entries 
 
 	# See which quartets in the tarball are complete
-	chomp(my @complete_quartets_tarball = `tar tf $bucky_archive`);
+	chomp(my @complete_quartets_tarball = `tar tf $init_dir/$bucky_archive`);
 
 	# Add quartets to a hash for easier lookup
 	my %complete_quartets_tarball;
@@ -213,7 +216,7 @@ if (-e $bucky_archive && -e $quartet_output) {
 }
 
 # Unarchive input genes 
-chomp(my @genes = `tar xvf $archive -C $mb_out_dir`);
+chomp(my @genes = `tar xvf $init_dir/$archive -C $mb_out_dir`);
 
 #chdir($gene_dir);
 chdir($mb_out_dir);

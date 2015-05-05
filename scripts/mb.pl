@@ -32,6 +32,9 @@ my $mb_block;
 # Where this script is located 
 my $script_path = abs_path($0);
 
+# Directory script was called from
+my $init_dir = abs_path(".");
+
 # Where the script was called from
 my $initial_directory = $ENV{PWD};
 
@@ -52,6 +55,7 @@ GetOptions(
 	"machine-file:s"    => \$machine_file_path,
 	"check|c:f"         => \&check_nonconvergent,
 	"remove|r:f"        => \&remove_nonconvergent,
+    "out-dir|o=s"       => \$project_name,
 	"n-threads|T"       => \$max_forks,
 	"port=i"            => \$port,
 	"server-ip:s"       => \&client, # for internal usage only
@@ -160,7 +164,7 @@ if (-e $mb_archive) {
 }
 
 # Unarchive input genes 
-chomp(my @genes = `tar xvf $archive -C $gene_dir`);
+chomp(my @genes = `tar xvf $init_dir/$archive -C $gene_dir`);
 
 chdir($gene_dir);
 
