@@ -59,14 +59,14 @@ The following table describes the support command-line optionswhich can be speci
 
 | Option Flag(s) | Option Description | Default |
 |:--|:--:|:--:|
-| #8209;b,&nbsp;#8209;#8209;block#8209;size | sets the minimum number of parsimony-informative characters which can be found in a block | none |
-| #8209;f,&npsp;#8209;#8209;forced#8209;break | forces a breakpoint after the specified number of parsimony-informative characters, these partitions are then run independenly | none |
-| #8209;#8209;gap#8209;as#8209;char | specify to treat gaps as informative characters in PAUP* parsimony analyses| gaps not informative |
-| #8209;#8209;machine#8209;file | file name containing hosts to ssh onto and perform analyses on, passwordless login MUST be enabled | none |
-| #8209;#8209;port | specifies the port to utilize on the server | 10001 |
-| #8209;o,&nbsp;#8209;#8209;out#8209;dir | name of the directory to store output files in | "mdl-" + Unix time of script invocation) |
-| #8209;T,&nbsp;#8209;#8209;n#8209;threads | the number of forks ALL hosts running analyses can use concurrently | current number of free CPUs |
-| #8209;h,&nbsp;#8209;#8209;help |display help and exit | N/A |
+| &#8209;b,&nbsp;&#8209;&#8209;block&#8209;size | sets the minimum number of parsimony-informative characters which can be found in a block | none |
+| &#8209;f,&npsp;&#8209;&#8209;forced&#8209;break | forces a breakpoint after the specified number of parsimony-informative characters, these partitions are then run independenly | none |
+| &#8209;&#8209;gap&#8209;as&#8209;char | specify to treat gaps as informative characters in PAUP* parsimony analyses| gaps not informative |
+| &#8209;&#8209;machine&#8209;file | file name containing hosts to ssh onto and perform analyses on, passwordless login MUST be enabled | none |
+| &#8209;&#8209;port | specifies the port to utilize on the server | 10001 |
+| &#8209;o,&nbsp;&#8209;&#8209;out&#8209;dir | name of the directory to store output files in | "mdl-" + Unix time of script invocation) |
+| &#8209;T,&nbsp;&#8209;&#8209;n&#8209;threads | the number of forks ALL hosts running analyses can use concurrently | current number of free CPUs |
+| &#8209;h,&nbsp;&#8209;&#8209;help |display help and exit | N/A |
 
 ### Output Files
 Given an input alignment named 'chromosome1.fa', the following files can be found in the output directory upon successful completion of the script:
@@ -132,14 +132,14 @@ The following table describes the support command-line optionswhich can be speci
 
 | Option Flag(s) | Option Description | Default |
 |:--|:--:|:--:|
-| #8209;m,&nbsp;#8209;#8209;mb#8209;block | text file containing MrBayes commands to append to each input partition | none |
-| #8209;c,&nbsp;#8209;#8209;check | outputs how many MrBayes runs standard deviation of split frequencies have reached the specified threshold | N/A |
-| #8209;r,&nbsp;#8209;#8209;remove | removes MrBayes runs with standard deviation of split frequencies below the specified threshold | N/A |
-| #8209;#8209;machine#8209;file | file name containing hosts to ssh onto and perform analyses on, passwordless login MUST be enabled | none |
-| #8209;#8209;port | specifies the port to utilize on the server | 10002 |
-| #8209;o,&nbsp;#8209;#8209;out#8209;dir | name of the directory to store output files in | "mb-" + Unix time of script invocation) |
-| #8209;T,&nbsp;#8209;#8209;n#8209;threads | the number of forks ALL hosts running analyses can use concurrently | current number of free CPUs |
-| #8209;h,&nbsp;#8209;#8209;help |display help and exit | N/A |
+| &#8209;m,&nbsp;&#8209;&#8209;mb&#8209;block | text file containing MrBayes commands to append to each input partition | none |
+| &#8209;c,&nbsp;&#8209;&#8209;check | outputs how many MrBayes runs standard deviation of split frequencies have reached the specified threshold | N/A |
+| &#8209;r,&nbsp;&#8209;&#8209;remove | removes MrBayes runs with standard deviation of split frequencies below the specified threshold | N/A |
+| &#8209;&#8209;machine&#8209;file | file name containing hosts to ssh onto and perform analyses on, passwordless login MUST be enabled | none |
+| &#8209;&#8209;port | specifies the port to utilize on the server | 10002 |
+| &#8209;o,&nbsp;&#8209;&#8209;out&#8209;dir | name of the directory to store output files in | "mb-" + Unix time of script invocation) |
+| &#8209;T,&nbsp;&#8209;&#8209;n&#8209;threads | the number of forks ALL hosts running analyses can use concurrently | current number of free CPUs |
+| &#8209;h,&nbsp;&#8209;&#8209;help |display help and exit | N/A |
 
 ### Output Files
 Given an input partition tarball named 'chromosome1.tar.gz', the following files can be found in the output directory upon successful completion of the script:
@@ -175,13 +175,13 @@ The following table describes the support command-line optionswhich can be speci
 
 | Option Flag(s) | Option Description | Default |
 |:--|:--:|:--:|
-| #8209;a,&nbsp;#8209;#8209;alpha | value of alpha to use when running BUCKy | 1 |
-| #8209;n,&nbsp;#8209;#8209;ngen | number of generations to run BUCKy MCMC chain | 1000000 generations |
-| #8209;#8209;machine#8209;file | file name containing hosts to ssh onto and perform analyses on, passwordless login MUST be enabled | none |
-| #8209;#8209;port | specifies the port to utilize on the server | 10003 |
-| #8209;o,&nbsp;#8209;#8209;out#8209;dir | name of the directory to store output files in | "bucky-" + Unix time of script invocation) |
-| #8209;T,&nbsp;#8209;#8209;n#8209;threads | the number of forks ALL hosts running analyses can use concurrently | current number of free CPUs |
-| #8209;h,&nbsp;#8209;#8209;help |display help and exit | N/A |
+| &#8209;a,&nbsp;&#8209;&#8209;alpha | value of alpha to use when running BUCKy | 1 |
+| &#8209;n,&nbsp;&#8209;&#8209;ngen | number of generations to run BUCKy MCMC chain | 1000000 generations |
+| &#8209;&#8209;machine&#8209;file | file name containing hosts to ssh onto and perform analyses on, passwordless login MUST be enabled | none |
+| &#8209;&#8209;port | specifies the port to utilize on the server | 10003 |
+| &#8209;o,&nbsp;&#8209;&#8209;out&#8209;dir | name of the directory to store output files in | "bucky-" + Unix time of script invocation) |
+| &#8209;T,&nbsp;&#8209;&#8209;n&#8209;threads | the number of forks ALL hosts running analyses can use concurrently | current number of free CPUs |
+| &#8209;h,&nbsp;&#8209;&#8209;help |display help and exit | N/A |
 
 ### Output Files
 Given an input tarball containing MrBayes output named 'chromosome1.mb.tar', the following files can be found in the output directory upon successful completion of the script:
