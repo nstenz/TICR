@@ -121,8 +121,8 @@ stepwise.test.tree = function(cf, guidetree, search="heuristic", method="PLL",
  # !Warning! external variables: cf, guidetree
  # gives score to each branch in guidetree: number/weight of 4-taxon sets 
  #       in 'quartetID' whose internal edge includes that branch
-  ues = rep(1,length(quartetID)) %*% quartet2edge[quartetID,internal.edge] / total.ew
-  wes = qw[quartetID] %*% quartet2edge[quartetID,internal.edge] / qw.ew
+  ues = rep(1,length(quartetID)) %*% quartet2edge[quartetID,internal.edge,drop=F] / total.ew
+  wes = qw[quartetID,drop=F] %*% quartet2edge[quartetID,internal.edge,drop=F] / qw.ew
   return(rbind(ues,wes))
  }
 
@@ -198,8 +198,9 @@ stepwise.test.tree = function(cf, guidetree, search="heuristic", method="PLL",
   tab = table(pcat)
   res = chisq.test(tab, p=tab0) # p-value from X-squared and df=3
   #return(cbind(tk,cf.exp,pval,pcat))
-  return(list(alpha=alpha,minus.pll=minus.pll,X2=res$statistic,
-              p.01=tab[".01"],p.05=tab[".05"],p.10=tab[".10"],pval=pval))
+  return(list(alpha=alpha,minus.pll=minus.pll,X2=as.numeric(res$statistic),
+              chisq.pval=res$p.value,p.01=as.numeric(tab[".01"]),p.05=as.numeric(tab[".05"]),
+              p.10=as.numeric(tab[".10"]),p.large=as.numeric(tab["large"]),pval=pval))
  }
 
  # main: heuristic search through partial trees
@@ -295,7 +296,8 @@ stepwise.test.tree = function(cf, guidetree, search="heuristic", method="PLL",
      }}
     }
    }
-   cat("iter=",iter,"\n\taction=",bestAction,", edge=",bestEdge,"\n")
+   cat("iter=",iter,"\n\taction=",bestAction,
+       ifelse(bestAction=="stop","",", edge="),bestEdge,"\n", sep="")
    if (bestAction=="stop"){ break }
    if (bestAction=="add"){ edge2keep.current=c(edge2keep.current,bestEdge)}
    if (bestAction=="remove"){ edge2keep.current=edge2keep.current[-bestEdge]}
@@ -305,11 +307,13 @@ stepwise.test.tree = function(cf, guidetree, search="heuristic", method="PLL",
    #cat("\n\talpha=",bestRes1$alpha,"\n\t-PLL =",bestRes1$minus.pll)
    #cat("\n\tX2   =",bestRes1$X2,"\n\tcrit.=",bestCriterion,"\n")}
   }
-  return(list(Nedge=Nedge,edges=edge2keep.current,
-              notincluded = setdiff(internal.edge,edge2keep.current),
+  return(list(Nedge=Nedge,edges=sort(edge2keep.current),
+              notincluded = sort(setdiff(internal.edge,edge2keep.current)),
               alpha=bestRes1$alpha,
               negPseudoLoglik=bestRes1$minus.pll, X2=bestRes1$X2,
-              p.01=bestRes1$p.01, p.05=bestRes1$p.05, p.10=bestRes1$p.10))
+              chisq.pval=bestRes1$chisq.pval,
+              p.01=bestRes1$p.01,p.05=bestRes1$p.05,
+              p.10=bestRes1$p.10,p.large=bestRes1$p.large))
  }
 }
 
@@ -507,7 +511,7 @@ test.one.species.tree <- function(cf,guidetree,prep,edge.keep,plot=FALSE){
   tab = table(pcat)
   res = chisq.test(tab, p=tab0) # p-value from X-squared and df=3
   #return(cbind(tk,cf.exp,pval,pcat))
-  return(list(alpha=alpha,minus.pll=minus.pll,X2=res$statistic,
-              p.01=tab[".01"],p.05=tab[".05"],p.10=tab[".10"],pval=pval,
-              cf.exp=cf.exp))
+  return(list(alpha=alpha,minus.pll=minus.pll,X2=as.numeric(res$statistic),pval=res$p.value,
+              outlier.table=rbind(observed=tab,expected=tab0*M),
+              outlier.pvalues=pval,cf.exp=cf.exp))
 }
