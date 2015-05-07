@@ -161,18 +161,6 @@ mkdir($mb_out_dir) or die "Could not create '$mb_out_dir': $!.\n" if (!-e $mb_ou
 mkdir($mb_sum_dir) or die "Could not create '$mb_sum_dir': $!.\n" if (!-e $mb_sum_dir);
 
 # Check if completed genes from a previous run exist
-#my %complete_genes;
-#if (-e $mb_archive) {
-#	print "\nArchive containing completed MrBayes runs found for this dataset found in '$mb_archive'.\n";
-#	print "Completed runs contained in this archive will be removed from the job queue.\n";
-#
-#	# Add gene names in tarball to list of completed genes
-#	chomp(my @complete_genes = `tar tf $mb_archive`);
-#	foreach my $gene (@complete_genes) {
-#		$gene =~ s/\.tar\.gz//;
-#		$complete_genes{$gene}++;
-#	}
-#}
 my %complete_quartets;
 if (-e $bucky_archive && -e $quartet_output) {
 	print "\nArchive containing completed quartets found for this dataset found in '$bucky_archive'.\n";
@@ -339,7 +327,6 @@ print "Job server successfully created.\n";
 chomp(my $server_hostname = `hostname`);
 push(@machines, $server_hostname) if (scalar(@machines) == 0);
 
-#@pids;
 my @pids;
 foreach my $machine (@machines) {
 
@@ -375,9 +362,6 @@ foreach my $machine (@machines) {
 
 # Move into mbsum directory
 chdir($mb_sum_dir);
-
-# Don't create zombies
-#$SIG{CHLD} = 'IGNORE';
 
 my $select = IO::Select->new($sock);
 
@@ -593,10 +577,6 @@ sub client {
 	my @unlink;
 
 	# Change signal handling so killing the server kills these processes and cleans up
-	#$SIG{CHLD} = 'IGNORE';
-	#$SIG{HUP}  = sub { print "\n\n$$ received SIGHUP\n\n"; unlink($0, $bucky); unlink(@sums); unlink($mbsum_archive) if defined($mbsum_archive); kill -15, $$; };
-	#$SIG{TERM} = sub { unlink(glob($quartet."*")) if defined($quartet); exit(0); };
-
 	$SIG{HUP}  = sub {unlink($0, $bucky); unlink(@sums); unlink($mbsum_archive) if defined($mbsum_archive); kill -15, $$; };
 
 	# Connect to the server
@@ -616,12 +596,8 @@ sub client {
 			$quartet = $1;
 			my $bucky_settings = $2;
 
-			#$SIG{TERM} = sub { close(STDIN); close(STDOUT); close(STDERR); unlink(@unlink); exit(0); };
-			#$SIG{TERM} = sub { close(STDIN); close(STDOUT); close(STDERR); unlink(glob("$quartet*")); kill -9, $$; exit(0); };
-
 			# If client is local this needs to be defined now
 			chomp(@sums = `tar tf $mbsum_archive`) if (!@sums);
-			#$SIG{TERM} = sub { unlink($0, $bucky); unlink(@sums); unlink($mbsum_archive); close(STDIN); close(STDOUT); close(STDERR); unlink(glob("$quartet*")); kill -9, $$; exit(0); };
 			$SIG{TERM} = sub { close(STDIN); close(STDOUT); close(STDERR); unlink(glob("$quartet*")); kill -9, $$; exit(0); };
 
 			# Create prune tree file contents required for BUCKy
@@ -795,6 +771,7 @@ sub parse_mb_log {
 	my $ngen;
 	my $nruns;
 	my $burnin;
+	my $burninfrac;
 	my $samplefreq;
 	open(my $log_file, "<", $log_file_name);
 	while (my $line = <$log_file>) {
@@ -805,6 +782,9 @@ sub parse_mb_log {
 			$nruns = $1;
 		}
 		elsif ($line =~ /Setting burnin fraction to (\S+)/) {
+			$burninfrac = $1;
+		}
+		elsif ($line =~ /Setting chain burn-in to (\d+)/) {
 			$burnin = $1;
 		}
 		elsif ($line =~ /Setting sample frequency to (\d+)/) {
@@ -813,12 +793,16 @@ sub parse_mb_log {
 		elsif ($line =~ /Setting number of generations to (\d+)/) {
 			$ngen = $1;
 		}
-		#last if ($line =~ /Exiting data block/);
 	}
 	close($log_file);
 
-	return {'NGEN' => $ngen, 'NRUNS' => $nruns, 'BURNIN' => $burnin, 
-	        'SAMPLEFREQ' => $samplefreq, 'TAXA' => \@taxa};
+	if (defined($burnin)) {
+		return {'SAMPLEFREQ' => $samplefreq, 'NRUNS' => $nruns, 'BURNIN' => $burnin };
+	}
+	else {
+		return {'NGEN' => $ngen, 'NRUNS' => $nruns, 'BURNINFRAC' => $burninfrac, 
+				'SAMPLEFREQ' => $samplefreq, 'TAXA' => \@taxa};
+	}
 }
 
 sub run_mbsum {
@@ -827,6 +811,7 @@ sub run_mbsum {
 	# Unzip specified tarball
 	chomp(my @mb_files = `tar xvf $mb_out_dir$tarball -C $mb_out_dir`);
 
+	# Determine name for this partition's log file
 	my $log_file_name;
 	foreach my $file (@mb_files) {
 		if ($file =~ /\.log$/) {
@@ -841,13 +826,18 @@ sub run_mbsum {
 
 	(my $gene_name = $tarball) =~ s/\.nex\.tar\.gz//;
 
-	# Number of trees mbsum should remove from each file
-	#my $trim = ((($ngen / $samplefreq) * $nruns * $burnin) / $nruns) + 1;
-	my $trim = ((($mb->{NGEN} / $mb->{SAMPLEFREQ}) * $mb->{NRUNS} * $mb->{BURNIN}) / $mb->{NRUNS}) + 1;
+	# Determine number of trees mbsum should remove from each file
+
+	my $trim;
+	if ($mb->{BURNIN}) {
+		$trim = $mb->{BURNIN} + 1;
+	}
+	else {
+		$trim = ((($mb->{NGEN} / $mb->{SAMPLEFREQ}) * $mb->{NRUNS} * $mb->{BURNINFRAC}) / $mb->{NRUNS}) + 1;
+	}
 
 	# Summarize gene's tree files
 	system("$mbsum $mb_out_dir$gene_name.*.t -n $trim -o $mb_sum_dir$gene_name.sum >/dev/null 2>&1");
-	#system("$mbsum $mb_out_dir$gene_name.*.t -n $trim -o $mb_sum_dir$gene_name.sum");
 
 	# Clean up extracted files
 	chdir($mb_out_dir);
