@@ -197,7 +197,7 @@ if (drawTree.withBranchLengths){
   ew <- rep(1,nedg) # used for edge width
   ew[newdat$edge[newdat$meanCF >= cf.threshold]] <- 3
   pdf(tree.pdf.filename,height=10,width=14)
-  plot(tre,no.margin=T,edge.width=ew,use.edge.length=F,show.tip.label=F,x.lim=33)
+  plot(tre,no.margin=T,edge.width=ew,use.edge.length=F,show.tip.label=F)
   edgelabels(round(tre$edge.length[newdat$edge],2),newdat$edge,
              frame="n",adj=c(.5,-0.5),cex=.8)
   edgelabels(round(newdat$meanCF,2),newdat$edge,frame="n",adj=c(.5,1.3),font=3,cex=.8)
