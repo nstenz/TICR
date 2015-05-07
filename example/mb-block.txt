@@ -1,0 +1,9 @@
+begin mrbayes;
+	set nowarnings=yes;
+	set autoclose=yes;
+	set seed=112491;
+	set swapseed=1337;
+	lset nst=6 rates=gamma;
+	mcmcp ngen=200000 burninfrac=.25 samplefreq=200 printfreq=1000 diagnfreq=10000 nruns=3 nchains=3 temp=0.40 swapfreq=10;
+	mcmc; 
+end;
