@@ -542,7 +542,7 @@ foreach my $pid (@pids) {
 }
 
 print "\n  All connections closed.\n";
-print "Total execution time: ", secs_to_readable({'TIME' => time() - $time}), "\n\n";
+print "Total execution time: ", sec2human({'TIME' => time() - $time}), "\n\n";
 
 rmdir("$initial_directory/$project_name/$mb_sum_dir");
 
@@ -1001,60 +1001,27 @@ sub get_num_digits {
 	return $digits;	
 }
 
-sub secs_to_readable {
-	my $settings = shift;
+sub sec2human {
+	my $secs = shift;
 
-	my %time;
-	my $secs = $settings->{'TIME'};
-	$time{'SEC'} = $secs;
+	return "0 seconds" if (!$secs);
 
-	(my $decimal_secs = $secs) =~ s/.*(\.\d+)/$1/;
-
-	my $mins = floor($secs / 60);
-	if ($mins > 0) {
-		$secs = $secs % 60;
-		$secs += $decimal_secs if (defined $decimal_secs);
-
-		$time{'SEC'} = $secs;
-		$time{'MIN'} = $mins;
-
-		my $hrs = floor($mins / 60);
-		if ($hrs > 0) {
-			$mins = $mins % 60;
-
-			$time{'MIN'} = $mins;
-			$time{'HOUR'} = $hrs;
-
-			my $days = floor($hrs / 24);
-			if ($days > 0) {
-				$hrs  = $hrs % 24;	
-
-				$time{'HOUR'} = $hrs;
-				$time{'DAY'} = $days;
-			}
-		}
+	my $time;
+	if (int($secs / (24 * 60 * 60)) > 0) {
+		$time .= (int($secs / (24 * 60 * 60)) > 1).((int($secs / (24 * 60 * 60)) != 1) ? " days " : " day ");
 	}
+	if (($secs / (60 * 60)) % 24 > 0) {
+		$time .= (($secs / (60 * 60)) % 24).((($secs / (60 * 60)) % 24 != 1) ? " hours " : " hour ");
+	}
+	if (($secs / 60) % 60 > 0) {
+		$time .= (($secs / 60) % 60).(((($secs / 60) % 60) != 1) ? " minutes " : " minute ");
+	}
+	if (($secs % 60) > 0) {
+		$time .= ($secs % 60).((($secs % 60) != 1) ? " seconds " : " second ");
+	}
+	chop($time);
 
-	my $return;
-	if (exists($time{'DAY'})) {
-		$return = $time{'DAY'}." ".(($time{'DAY'} != 1) ? "days" : "day").
-				  ", ".$time{'HOUR'}." ".(($time{'HOUR'} != 1) ? "hours" : "hour").
-				  ", ".$time{'MIN'}." ".(($time{'MIN'} != 1) ? "minutes" : "minute").
-				  ", ".$time{'SEC'}." ".(($time{'SEC'} != 1) ? "seconds" : "second").".";
-	}
-	elsif (exists($time{'HOUR'})) {
-		$return = $time{'HOUR'}." ".(($time{'HOUR'} != 1) ? "hours" : "hour").
-				  ", ".$time{'MIN'}." ".(($time{'MIN'} != 1) ? "minutes" : "minute").
-				  ", ".$time{'SEC'}." ".(($time{'SEC'} != 1) ? "seconds" : "second").".";
-	}
-	elsif (exists($time{'MIN'})) {
-		$return = $time{'MIN'}." ".(($time{'MIN'} != 1) ? "minutes" : "minute").
-				  ", ".$time{'SEC'}." ".(($time{'SEC'} != 1) ? "seconds" : "second").".";
-	}
-	else {
-		$return = $time{'SEC'}." ".(($time{'SEC'} != 1) ? "seconds" : "second").".";
-	}
-	return $return;
+	return $time;
 }
 
 sub get_free_cpus {
