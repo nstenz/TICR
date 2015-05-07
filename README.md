@@ -25,8 +25,25 @@ ssh localhost
     ```
 
 	If a prompt appears asking for host authenticity verification, answer with 'yes' and then you should not experience any issues.
-* In order to function properly, any user-specified MrBayes block MUST allow logging to terminal.
+* In order to function properly, any user-specified MrBayes block **MUST** allow logging to terminal.
 * For "accurate" MCMC convergence checks, the user must ensure that their specified diagnose frequency divides evenly into their specified total number of MCMC generations.
+* When specifying a machine file (i.e. --machine-file filename.txt) to outsource jobs run by mdl.pl, mb.pl, or bucky.pl, passwordless login via ssh **MUST** be enabled for each machine listed in the machine file. For instance, if the machine file contains the following text:
+
+    ```
+noah@hostA
+nstenz@hostB
+hostC
+    ```
+
+    The user should be able to use ssh with each line as the only given option to the ssh command. In other words, typing the following into their terminal:
+
+    ```
+ssh noah@hostA
+ssh nstenz@hostB
+ssh hostC
+    ```
+
+	Should result in the user sshing to hostA, then hostB, and finally hostC without having to answer any command line prompts. Instructions for setting up passwordless ssh logins can be found [here](http://www.linuxproblem.org/art_9.html).
 
 ## Supported Operating Systems
 This script was tested and built on a cluster running Red Hat Enterprise Linux Server release 6.6 (Santiago), it should work for most other Linux distros, and might work on MacOS.
