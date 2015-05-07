@@ -526,7 +526,7 @@ foreach my $pid (@pids) {
 }
 
 print "\n  All connections closed.\n";
-print "Total execution time: ", sec2human({'TIME' => time() - $time}), "\n\n";
+print "Total execution time: ", sec2human('TIME' => time() - $time), ".\n\n";
 
 rmdir("$initial_directory/$project_name/$mb_sum_dir");
 
@@ -994,20 +994,25 @@ sub get_num_digits {
 sub sec2human {
 	my $secs = shift;
 
+	$secs = int($secs);
+
 	return "0 seconds" if (!$secs);
 
 	my $time;
 	if (int($secs / (24 * 60 * 60)) > 0) {
-		$time .= (int($secs / (24 * 60 * 60)) > 1).((int($secs / (24 * 60 * 60)) != 1) ? " days " : " day ");
+		$time .= (int($secs / (24 * 60 * 60)) > 1).((int($secs / (24 * 60 * 60)) != 1) ? " days, " : " day, ");
 	}
 	if (($secs / (60 * 60)) % 24 > 0) {
-		$time .= (($secs / (60 * 60)) % 24).((($secs / (60 * 60)) % 24 != 1) ? " hours " : " hour ");
+		$time .= (($secs / (60 * 60)) % 24).((($secs / (60 * 60)) % 24 != 1) ? " hours, " : " hour, ");
 	}
 	if (($secs / 60) % 60 > 0) {
-		$time .= (($secs / 60) % 60).(((($secs / 60) % 60) != 1) ? " minutes " : " minute ");
+		$time .= (($secs / 60) % 60).(((($secs / 60) % 60) != 1) ? " minutes, " : " minute, ");
 	}
 	if (($secs % 60) > 0) {
 		$time .= ($secs % 60).((($secs % 60) != 1) ? " seconds " : " second ");
+	}
+	else {
+		$time .= "0 seconds ";
 	}
 	chop($time);
 
