@@ -3,6 +3,12 @@ use strict;
 use warnings;
 use Cwd qw(abs_path);
 
+# Use autoflush
+$|++;
+
+# Store script invocation
+my $invocation = "perl get-pop-tree.pl @ARGV";
+
 # Get QMC executable
 my $qmc = get_QMC_exec();
 
@@ -10,8 +16,11 @@ my $qmc = get_QMC_exec();
 my $input = shift;
 
 # Error checking
-die "You must input a .csv file containing quartet split information.\n" if (!defined($input));
+die "You must input a csv file containing quartet split information.\n" if (!defined($input));
 die "Could not locate '$input'.\n" if (!-e $input);
+
+# Print the current script settings
+print "\nScript was called as follows:\n$invocation\n\n";
 
 # Determine input root name
 (my $input_root_no_ext = $input) =~ s/(.*\/)?(.*)\.CFs\.csv/$2/;
@@ -19,6 +28,8 @@ die "Could not locate '$input'.\n" if (!-e $input);
 # File names for QMCN input and output
 my $qmc_input = "$input_root_no_ext.QMC.txt";
 my $qmc_output = "$input_root_no_ext.QMC.tre";
+
+print "Parsing major resolution of each 4-taxon set... ";
 
 # Parse input
 my %taxa;
@@ -76,6 +87,8 @@ while (my $quartet = <$input_file>) {
 }
 close($input_file);
 
+print "done.\n";
+
 # Create hash to allow for renaming of quartets based on sorted taxa names
 my $id = 1;
 my %taxon_to_id;
@@ -96,6 +109,8 @@ open(my $qmc_input_file, ">", $qmc_input);
 print {$qmc_input_file} join(" ", @quartets),"\n";
 close($qmc_input_file);
 
+print "Running Quartet Max Cut...\n";
+
 # Run Quartet Max Cut
 system("find-cut-Linux-64", "qrtt=$qmc_input", "otre=$qmc_output");
 unlink($qmc_input);
@@ -108,10 +123,12 @@ close($qmc_output_file);
 my %id_to_taxon = reverse(%taxon_to_id);
 $tree =~ s/(\d+)/$id_to_taxon{$1}/g;
 
-# Reopen Quartet Max Cut output and replace it with modified tree
+# Reopen Quartet Max Cut output and replace it with the modified tree
 open($qmc_output_file, ">", $qmc_output);
 print {$qmc_output_file} $tree,"\n";
 close($qmc_output_file);
+
+print "Quartet Max Cut complete, tree located in '$qmc_output'.\n\n";
 
 sub get_QMC_exec {
 	my $OS = $^O;
