@@ -8,8 +8,11 @@
 # Depends on R package 'ape'
 # Execute from terminal like this:
 # Rscript --vanilla getTreeBranchLengths.r
-# or like this to change the input file names:
+# or like this to change the input file names, and outgroup for plotting:
 # Rscript --vanilla getTreeBranchLengths.r new_file_name_root
+# Rscript --vanilla getTreeBranchLengths.r new_file_name_root outgroup_name
+# example:
+# Rscript --vanilla getTreeBranchLengths.r chr4-subset A_Lyr
 
 # 1. reads the tree, extract all quartets defining each branch,
 #    writes them in file 'edge2quartets.txt'
@@ -25,10 +28,14 @@
 #------------------------------------------------------------------#
 
 filename.root <- "BD_walk_Q30_all.v1.reduced"
+outgroup <- NULL
 args <- commandArgs(TRUE)
 if (length(args)>0)
   filename.root <- args[1]
+if (length(args)>1)
+  outgroup <- args[2]
 cat("root for file names:",filename.root,"\n")
+cat("outgroup:", ifelse(is.null(outgroup),"last taxon",outgroup),"\n")
 tree.filename <- paste(filename.root, ".QMC.tre", sep="")
 buckyCF.filename <- paste(filename.root, ".CFs.csv", sep="")
 # required format looks like this: specific column names,
@@ -53,14 +60,22 @@ cf.threshold <- 0.38 # edges with CF above this value will be drawn thicker
 
 library(ape)
 tre <- read.tree(tree.filename)
-ntax <- length(tre$tip.label) # 30 taxa
+ntax <- length(tre$tip.label) # number of taxa
 cat("\ttree was read.",ntax,"taxa.\n")
-# arbitrarily root with last taxon. For technical reasons
+# arbitrarily root with last taxon by default. For technical reasons
 # only, because the tree is considered as unrooted.
-tre <- root(tre,outgroup=ntax,resolve.root=FALSE) 
-nedg <- dim(tre$edge)[1] # 57 edges total
-intEdge <- which(tre$edge[,2]>ntax) # indices of the 27 internal edges
-outEdge <- which(tre$edge[,2] == ntax) # external edge to single outgroup
+if (is.null(outgroup)){  outg <- ntax
+} else {
+ outg <- which(tre$tip.label == outgroup)
+ if (length(outg) == 0)
+   stop("outgroup taxon ",outgroup," was not found in the tree\n")
+ if (length(outg) > 1)
+   stop("outgroup taxon ",outgroup," found more than once in the tree\n")
+}
+tre <- root(tre,outgroup=outg,resolve.root=FALSE)
+nedg <- dim(tre$edge)[1] # total number of edges
+intEdge <- which(tre$edge[,2]>ntax) # indices of internal edges
+outEdge <- which(tre$edge[,2] == outg) # external edge to single outgroup
 
 # Make a list of all descendants from each edge
 edgeDescendants <- vector("list",nedg)
@@ -140,8 +155,9 @@ for (i in intEdge){
 # subset(dat,edge==1)
 # subset(dat,edge==31)
 # write.table(dat,"edge2quartets.txt",row.names=F,quote=F)
-Nqrt <- dim(dat)[1] # 8780 (cp) or 7216 (pda)
-# number of quartets that define a particular branch in the tree
+Nqrt <- dim(dat)[1] # number of 4-taxon sets whose internal branch covers a single edge in the tree.
+# This is much smaller than the total number of 4-taxon sets: choose(ntax,4)
+# (8780 for stratified subsample, 7216 for PD, compared to choose(30,4)=27,405 4-taxon sets total)
 cat("\tlisted the",Nqrt,"quartets associated with edges in tree.\n")
 
 #------------------------------------------------------------------#
@@ -175,7 +191,6 @@ newdat <- data.frame(edge      = unique(dat$edge),
                      )
 newdat$edge.length = -log(3/2 * (1-newdat$meanCF))
 # newdat; hist(newdat$meanCF, breaks=30, col="tan")
-# cp-based taxa: one edge CF very high (0.957), 5 moderately high (.43-.49)
 write.csv(newdat,edgeLengths_meanCF.filename,quote=F,row.names=F)
 cat("\tlisted internal edges with mean (and sd) of CFs of quartets\n\t  on each edge, and associated coalescent units.\n\t  See in",edgeLengths_meanCF.filename,"\n")
 
@@ -204,4 +219,5 @@ if (drawTree.withBranchLengths){
   tiplabels(tre$tip.label, frame=c("none"), bg=NULL, adj=c(0,.5))
   dev.off()
   cat("\tplotted tree in",tree.pdf.filename,"\n")
+  cat("\t above branches: coalescent units\n\t below branches: average quartet concordance factors.\n")
 }
