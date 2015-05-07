@@ -75,7 +75,7 @@ The following table describes the support command-line optionswhich can be speci
 | &#8209;&#8209;gap&#8209;as&#8209;char | specify to treat gaps as informative characters in PAUP* parsimony analyses| gaps not informative |
 | &#8209;&#8209;machine&#8209;file | file name containing hosts to ssh onto and perform analyses on, passwordless login MUST be enabled | none |
 | &#8209;&#8209;port | specifies the port to utilize on the server | 10001 |
-| &#8209;o,&nbsp;&#8209;&#8209;out&#8209;dir | name of the directory to store output files in | "mdl-" + Unix time of script invocation) |
+| &#8209;o,&nbsp;&#8209;&#8209;out&#8209;dir | name of the directory to store output files in | "mdl-" + Unix time of script invocation |
 | &#8209;T,&nbsp;&#8209;&#8209;n&#8209;threads | the number of forks ALL hosts running analyses can use concurrently | current number of free CPUs |
 | &#8209;h,&nbsp;&#8209;&#8209;help |display help and exit | N/A |
 
@@ -148,7 +148,7 @@ The following table describes the support command-line optionswhich can be speci
 | &#8209;r,&nbsp;&#8209;&#8209;remove | removes MrBayes runs with standard deviation of split frequencies below the specified threshold | N/A |
 | &#8209;&#8209;machine&#8209;file | file name containing hosts to ssh onto and perform analyses on, passwordless login MUST be enabled | none |
 | &#8209;&#8209;port | specifies the port to utilize on the server | 10002 |
-| &#8209;o,&nbsp;&#8209;&#8209;out&#8209;dir | name of the directory to store output files in | "mb-" + Unix time of script invocation) |
+| &#8209;o,&nbsp;&#8209;&#8209;out&#8209;dir | name of the directory to store output files in | "mb-" + Unix time of script invocation |
 | &#8209;T,&nbsp;&#8209;&#8209;n&#8209;threads | the number of forks ALL hosts running analyses can use concurrently | current number of free CPUs |
 | &#8209;h,&nbsp;&#8209;&#8209;help |display help and exit | N/A |
 
@@ -190,7 +190,7 @@ The following table describes the support command-line options which can be spec
 | &#8209;n,&nbsp;&#8209;&#8209;ngen | number of generations to run BUCKy MCMC chain | 1,000,000 generations |
 | &#8209;&#8209;machine&#8209;file | file name containing hosts to ssh onto and perform analyses on, passwordless login MUST be enabled | none |
 | &#8209;&#8209;port | specifies the port to utilize on the server | 10003 |
-| &#8209;o,&nbsp;&#8209;&#8209;out&#8209;dir | name of the directory to store output files in | "bucky-" + Unix time of script invocation) |
+| &#8209;o,&nbsp;&#8209;&#8209;out&#8209;dir | name of the directory to store output files in | "bucky-" + Unix time of script invocation |
 | &#8209;T,&nbsp;&#8209;&#8209;n&#8209;threads | the number of forks ALL hosts running analyses can use concurrently | current number of free CPUs |
 | &#8209;h,&nbsp;&#8209;&#8209;help |display help and exit | N/A |
 
