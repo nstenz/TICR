@@ -53,7 +53,7 @@ cp bucky-example/$DATASET_ROOT.CFs.csv .
 Rscript ../scripts/getTreeBranchLengths.r $DATASET_ROOT
 
 # Run TICR
-#Rscript ../scripts/TICR.r
+Rscript ../scripts/TICR.r $DATASET_ROOT
 
 END=$(date +%s)
 
