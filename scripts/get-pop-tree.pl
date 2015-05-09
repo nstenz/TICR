@@ -112,7 +112,7 @@ close($qmc_input_file);
 print "Running Quartet Max Cut...\n";
 
 # Run Quartet Max Cut
-system("find-cut-Linux-64", "qrtt=$qmc_input", "otre=$qmc_output");
+system($qmc, "qrtt=$qmc_input", "otre=$qmc_output");
 unlink($qmc_input);
 
 # Open Quartet Max Cut output and replace taxa ids with actual names
