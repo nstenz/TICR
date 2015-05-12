@@ -263,19 +263,28 @@ and then TICR.r can be run from the command line:
 Rscript --vanilla TICR.r chromosome1
 ```
 This script requires that R and the "ape" package have already been installed. 
-It will use the R functions in testingTreeWithQuartetCF.r, which are
+It will use the R functions in 'testingTreeWithQuartetCF.r', which are
 placed in the 'ticr' directory. 
 
 ### Output files
+Given an input concordance fator csv named 'chromosome1.CFs.csv' and guide tree named
+'chromosome1.QMC.tre', the following files will be created:
 
-### Example of TICR test for other situations
-The R functions provided in ticr/testingTreeWithQuartetCF.r 
-can be used on any quartet concordance factor data and any guide tree. 
-For instance, one might have get these CFs from multiple genes
+* **chromosome1.ticr.txt**: contains the results of the tests of panmixia, binary tree, 
+  partial tree search, and test of that partial tree. 
+* **chromosome1.ticr.pdf**: contains a pdf showing the partial tree with 
+  edges reduced to zero to show current or past panmictic populations.
+
+
+### Example of TICR tests in other situations
+The R functions provided in 'ticr/testingTreeWithQuartetCF.r' 
+can be used on any quartet concordance factor data and guide tree. 
+For instance, one might get quartet CFs from multiple genes
 analyzed with RAxML. For each set of 4 taxa, one might drop any gene whose
 quartet tree is supported with less than 80% bootstrap (say), and calculate
-concordance factors based on the remaining genes. One might get the guide tree
-from ASTRAL, for instance.
+concordance factors based on the remaining genes for this 4-taxon sets. 
+One might get the guide tree from running ASTRAL on all the full gene trees, for instance,
+rather than Quartet MaxCut on the major quartets.
 To perform the TICR tests to such data and guide tree, and to follow-up with
 the identification of taxa responsible for outlier quartets,
-see example.r in the ticr/ directory. 
+see 'example.r' in the 'ticr/' directory. 
