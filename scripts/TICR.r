@@ -1,7 +1,7 @@
 # run this from the command line with:
-# Rscript --vanilla TICRtest.r file_name_root
+# Rscript --vanilla TICR.r file_name_root
 # example:
-# Rscript --vanilla TICRtest.r chr4-subset
+# Rscript --vanilla TICR.r chr4-subset
 # Requirements:
 # - R package "ape"
 # - TICR functions in file testingTreeWithQuartetCF.r, placed in ../ticr/
