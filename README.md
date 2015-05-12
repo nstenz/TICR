@@ -1,7 +1,17 @@
 # TICR
 These scripts can be utilized to perform highly parallelized concordance analyses on any given alignment, with a particular focus on very large datasets which may include dozens of taxa and may span entire chromosomes or genomes.
+Jump to: 
+* [Dependencies](#dep)
+* [Important notes](#notes)
+* [Operating System](#os)
+* [Pipeline overview](#runorder)
+* [MDL](#mdl) to delimit loci
+* [MrBayes](#mb) to perform individual gene analyses
+* [BUCKy](#bucky) to estimate quartet concordance factors
+* [Quartet MaxCut](#qmc) to estimate a binary population tree
+* [TICR](#ticr) to test panmixia, binary tree, and partial tree with current or ancestral panmictic populations
 
-## Dependencies
+## Dependencies <a name="dep"></a>
 1. [PAUP*](http://paup.csit.fsu.edu/downl.html)
 	* Used to perform quick parsimony analyses on all possible breakpoints to detect shifts in tree topology using MDL.
 2. mdl (included in source)
@@ -17,7 +27,7 @@ These scripts can be utilized to perform highly parallelized concordance analyse
 	* Used to read and draw Newick trees, also used to check for tree incongruence.
 	* also requires the ["ape"](http://cran.r-project.org/web/packages/ape/index.html) R library to be installed.
 
-## Important Notes
+## Important Notes <a name="notes"></a>
 * Even if you only plan on running these scripts solely on a single computer, many still use ssh to spawn worker clients on the host computer. To ensure proper script execution, enter the following command in your terminal:
 
     ```
@@ -45,10 +55,10 @@ ssh hostC
 
 	should result in the user sshing to hostA, then hostB, and finally hostC without having to answer any command line prompts. Instructions for setting up passwordless ssh logins can be found [here](http://www.linuxproblem.org/art_9.html).
 
-## Supported Operating Systems
+## Supported Operating Systems <a name="os"></a>
 This script was tested and built on a cluster running Red Hat Enterprise Linux Server release 6.6 (Santiago), it should work for most other Linux distros, and might work on MacOS.
 
-## Script Run Order
+## Pipeline overview <a name="runorder"></a>
 1. mdl.pl
 	* This script handles the parallelized execution of MDL. Upon successful completion, this script will have generated a gzipped tarball containing the sequence data of each partition found by MDL. This tarball is used as the input for the next script. TODO: other files generated
 2. mb.pl
@@ -65,7 +75,7 @@ This script was tested and built on a cluster running Red Hat Enterprise Linux S
 	  - test the binary population tree
 	  - search for the best unresolved version of this population tree and test its goodness-of-fit.
 
-## mdl.pl
+## mdl.pl <a name="mdl"></a>
 ### Script Work Flow
 This script begins by reducing the given input alignment to only parsimony-informative characters using the program PAUP\*. Once all parsimony-informative sites have been determined, PAUP\* is used to calculate the parsimony score of every potential breakpoint which could occur in the input alignment. Using these parsimony scores, a Minimum Description Length criterion as implemented in the program mdl is utilized to determine where changes in tree topology across the alignment have occured (for a more in-depth overview of the principles behind MDL, read the following [paper](http://gbe.oxfordjournals.org/content/3/246.abstract?keytype=ref&ijkey=EGdYfRvyX3uU20z)). This effectively splits the input alignment into partitions of sequence with homogeneous topology ("recombinational genes"). The start and end indices of these sequences are then converted back into their corresponding indices in the full alignment (non-parsimony informative characters included) which the user originally input. Non-parsimony informative characters located between two partitions are divided equally between them.
 ### Usage
@@ -109,7 +119,7 @@ Given an input alignment named 'chromosome1.fa', the following files can be foun
 * **chromosome1-stats.csv**: contains MDL partition start and end indices in terms of both the full and parsimony-informative character alignment, can be useful for determining average partition length, as well as the average number of parsimony-informative and non-parsimony informative characters present in each partition
 * symlink to specified input file
 
-## mb.pl
+## mb.pl <a name="mb"></a>
 ### Script Work Flow
 This script begins by appending the user-specified MrBayes block to each Nexus file representing an MDL partition located in the input tarball created by mdl.pl. Once this is complete, the script proceeds to run MrBayes on each MDL partition. The results for each partition are then tarballed and gzipped. The tarballs for each partition are then aggregated into a single tarball.
 
@@ -178,7 +188,7 @@ Given an input partition tarball named 'chromosome1.tar.gz', the following files
 * **chromosome1.mb.tar**: contains all output from the MrBayes analysis of each partition contained in 'chromosome1.tar.gz'
 * symlink to specified input file
 
-## bucky.pl
+## bucky.pl <a name="bucky"></a>
 ### Script Work Flow
 This script begins by summarizing the MrBayes output files for each individual partition using the program mbsum. Once all posteriers for all partitions have been summarized, this script calculates all the possible quartets for the given alignment and runs each one through BUCKy do determine the concordance factors for the three possible splits.
 
@@ -222,9 +232,10 @@ Given an input tarball containing MrBayes output named 'chromosome1.mb.tar', the
 * **chromosome1.CFs.csv**: contains the concordance factors for each possible split of each possible quartet as well as their 95% confidence intervals
 * symlink to specified input file
 
-## get-pop-tree.pl
+## get-pop-tree.pl <a name="qmc"></a>
 ### Script Work Flow
-This script begins by reading in the csv created by bucky.pl. For each four-taxon set, the split with the highest corresponding concordance factor (the primary split) is the selected for input for the program Quartet MaxCut.  In the case where there is a tie for the primary split, all of these tied splits will be output to a file, which is a fairly unlikely although not impossible scenario.
+This script estimates a binary population tree using Quartet MaxCut. 
+It begins by reading in the csv created by bucky.pl. For each four-taxon set, the split with the highest corresponding concordance factor (the primary split) is the selected for input for the program Quartet MaxCut.  In the case where there is a tie for the primary split, all of these tied splits will be output to a file, which is a fairly unlikely although not impossible scenario.
 
 ### Usage
 The command line option required for running this script is the name of the quartet csv file that the user desires to create a population tree from. For instance, if bucky.pl had been run with the following command:
@@ -244,7 +255,7 @@ Given an input concordance fator csv named 'chromosome1.CFs.csv', the following 
 * **chromosome1.QMC.txt**: contains the splits utilized by Quartet MaxCut which were used to determine the population tree.
 * **chromosome1.QMC.tre**: contains the actual tree (in Newick format) generated by Quartet MaxCut.
 
-## TICR.r
+## TICR.r <a name="ticr"></a>
 ### Script Work Flow
 This script is provided for convenience to apply the test of panmixia, binary tree, and partial tree 
 on a given data set. It takes in the csv file with the quartet concordance factors created by bucky.pl, 
