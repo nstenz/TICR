@@ -36,10 +36,10 @@ sed -i 's/ngen=[0-9]\+/ngen=200000/' $MB_BLOCK
 sed -i 's/samplefreq=[0-9]\+/samplefreq=200/' $MB_BLOCK
 ../scripts/mb.pl mdl-example/$DATASET_ROOT.tar.gz -m $MB_BLOCK -o mb-example
 
-# Check that the MCMC chains are below the desired threshold (should be all except one)
+# Check that the MCMC chains are below the desired threshold (should be all now)
 ../scripts/mb.pl mb-example -c $CONVERGENCE_THRESHOLD
 
-# Remove runs below the desired threshold (should be just the one)
+# Remove runs below the desired threshold (shouldn't be any)
 ../scripts/mb.pl mb-example -r $CONVERGENCE_THRESHOLD
 
 # Run BUCKy on all 210 possible 4-taxon sets
