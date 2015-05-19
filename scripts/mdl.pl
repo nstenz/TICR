@@ -288,7 +288,7 @@ sub parse_fasta {
 		or die "Could not open '$filename': $!\n";
 
 	while (my $line = <$alignment_file>) {
-		chomp($line);
+		$line =~ s/^\s+|\s+$//g;
 
 		# Taxon name
 		if ($line =~ /^>(.*)/) {
