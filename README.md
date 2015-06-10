@@ -222,6 +222,7 @@ The following table describes the support command-line options which can be spec
 | &#8209;&#8209;port | specifies the port to utilize on the server | 10003 |
 | &#8209;o,&nbsp;&#8209;&#8209;out&#8209;dir | name of the directory to store output files in | "bucky-" + Unix time of script invocation |
 | &#8209;T,&nbsp;&#8209;&#8209;n&#8209;threads | the number of forks ALL hosts running analyses can use concurrently | current number of free CPUs |
+| &#8209;s,&nbsp;&#8209;&#8209;no&#8209;mbsum | informs the script that the input is a tarball containing output already parsed by mbsum | off |
 | &#8209;h,&nbsp;&#8209;&#8209;help |display help and exit | N/A |
 
 ### Output Files
