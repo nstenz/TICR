@@ -45,6 +45,9 @@ my $no_forks;
 # Allow for reusing info from an old run
 my $input_is_dir = 0;
 
+# Allow user to specify mbsum output as input for the script
+my $input_is_mbsum = 0;
+
 # How the script was called
 my $invocation = "perl bucky.pl @ARGV";
 
@@ -63,6 +66,7 @@ GetOptions(
 	"alpha|a=f"         => \$alpha,
 	"ngen|n=i"          => \$ngen,
 	"port=i"            => \$port,
+	"no-mbsum|s"        => \$input_is_mbsum,
 	"n-threads|T=i"     => \$max_forks,
 	"out-dir|o=s"       => \$project_name,
 	"server-ip=s"       => \&client, # for internal usage only
@@ -103,12 +107,16 @@ if (!$input_is_dir) {
 	# Clean run with no prior output
 
 	# Extract name information from input file
-	($archive_root = $archive) =~ s/.*\/(.*)/$1/;
-	#($archive_root_no_ext = $archive) =~ s/(.*\/)?(.*)(\.tar\.gz)|(\.tgz)/$2/;
-	#($archive_root_no_ext = $archive) =~ s/(.*\/)?(.*)(\.tar(\.gz)?$)|(\.tgz$)/$2/;
-	#($archive_root_no_ext = $archive) =~ s/(.*\/)?(.*)((\.mb)?\.tar(\.gz)?$)|((\.mb)?\.tgz$)/$2/;
-	#($archive_root_no_ext = $archive) =~ s/(.*\/)?(.*)((\.mb)?\.tar(\.gz)?$)|((\.mb)?\.tgz$)/$2/;
-	($archive_root_no_ext = $archive) =~ s/(.*\/)?(.*)(\.mb\.tar(\.gz)?$)|(\.mb\.tgz$)/$2/;
+
+	if ($input_is_mbsum) {
+		($archive_root = $archive) =~ s/.*\/(.*)/$1/;
+		($archive_root_no_ext = $archive) =~ s/(.*\/)?(.*)(\.tar(\.gz)?$)|(\.tgz$)/$2/;
+	}
+	else {
+		($archive_root = $archive) =~ s/.*\/(.*)/$1/;
+		($archive_root_no_ext = $archive) =~ s/(.*\/)?(.*)(\.mb\.tar(\.gz)?$)|(\.mb\.tgz$)/$2/;
+	}
+	die "Could not determine archive root name, did you specify the proper input?\n" if (!defined($archive_root_no_ext));
 
 	# Initialize working directory
 	# Remove conditional eventually
@@ -137,16 +145,25 @@ else {
 	die "Could not locate archive in '$project_name'.\n" if (!$found_name);
 
 	# Extract name information from input file
-	($archive_root = $archive) =~ s/.*\/(.*)/$1/;
-	#($archive_root_no_ext = $archive) =~ s/(.*\/)?(.*)(\.tar\.gz)|(\.tgz)/$2/;
-	#($archive_root_no_ext = $archive) =~ s/(.*\/)?(.*)((\.mb)?\.tar(\.gz)?$)|((\.mb)?\.tgz$)/$2/;
-	($archive_root_no_ext = $archive) =~ s/(.*\/)?(.*)(\.mb\.tar(\.gz)?$)|(\.mb\.tgz$)/$2/;
+#	($archive_root = $archive) =~ s/.*\/(.*)/$1/;
+#	($archive_root_no_ext = $archive) =~ s/(.*\/)?(.*)(\.mb\.tar(\.gz)?$)|(\.mb\.tgz$)/$2/;
+	if ($input_is_mbsum) {
+		($archive_root = $archive) =~ s/.*\/(.*)/$1/;
+		($archive_root_no_ext = $archive) =~ s/(.*\/)?(.*)(\.tar(\.gz)?$)|(\.tgz$)/$2/;
+	}
+	else {
+		($archive_root = $archive) =~ s/.*\/(.*)/$1/;
+		($archive_root_no_ext = $archive) =~ s/(.*\/)?(.*)(\.mb\.tar(\.gz)?$)|(\.mb\.tgz$)/$2/;
+	}
+	die "Could not determine archive root name, is your input file properly named?\n" if (!defined($archive_root_no_ext));
 }
 
 # The name of the output archive
 my $mbsum_archive = "$archive_root_no_ext.mbsum.tar.gz";
 my $bucky_archive = "$archive_root_no_ext.BUCKy.tar";
 my $quartet_output = "$archive_root_no_ext.CFs.csv";
+
+$mbsum_archive = $archive if ($input_is_mbsum);
 
 chdir($project_name);
 
@@ -203,33 +220,46 @@ if (-e $bucky_archive && -e $quartet_output) {
 	close($quartet_output_file);
 }
 
-# Unarchive input genes 
-chomp(my @genes = `tar xvf $init_dir/$archive -C $mb_out_dir`);
+my @taxa;
+my @genes;
+if ($input_is_mbsum) {
 
-#chdir($gene_dir);
-chdir($mb_out_dir);
+	# Unarchive input genes 
+	chomp(@genes = `tar xvf $init_dir/$archive -C $mb_sum_dir`);
 
-#@genes = glob($archive_root_no_ext."*.nex");
-#@genes = sort { (local $a = $a) =~ s/.*-(\d+)-\d+\..*/$1/; 
-#				(local $b = $b) =~ s/.*-(\d+)-\d+\..*/$1/; 
-#				$a <=> $b } @genes;
+	# Move into MrBayes output directory
+	chdir($mb_sum_dir);
 
-# Unzip a single gene
-chomp(my @mb_files = `tar xvf $genes[0]`);
+	# Parse one of input genes, assumes same taxa are present in ALL genes
+	@taxa = @{parse_mbsum_taxa($genes[0])};
 
-# Locate the log file output by MrBayes
-my $log_file_name;
-foreach my $file (@mb_files) {
-	if ($file =~ /\.log$/) {
-		$log_file_name = $file;
-		last;
-	}
+	system("tar", "czf", $mbsum_archive, @genes);
 }
-die "Could not locate log file for '$genes[0]'.\n" if (!defined($log_file_name));
+else {
 
-# Parse log file for run information
-my $mb_log = parse_mb_log($log_file_name);
-my @taxa = @{$mb_log->{TAXA}};
+	# Unarchive input genes 
+	chomp(@genes = `tar xvf $init_dir/$archive -C $mb_out_dir`);
+
+	# Move into MrBayes output directory
+	chdir($mb_out_dir);
+
+	# Unzip a single gene
+	chomp(my @mb_files = `tar xvf $genes[0]`);
+
+	# Locate the log file output by MrBayes
+	my $log_file_name;
+	foreach my $file (@mb_files) {
+		if ($file =~ /\.log$/) {
+			$log_file_name = $file;
+			last;
+		}
+	}
+	die "Could not locate log file for '$genes[0]'.\n" if (!defined($log_file_name));
+
+	# Parse log file for run information
+	my $mb_log = parse_mb_log($log_file_name);
+	@taxa = @{$mb_log->{TAXA}};
+}
 
 # Create list of possible quartets
 my @quartets = combine(\@taxa, 4);
@@ -266,6 +296,8 @@ if (-e $mbsum_archive && $input_is_dir) {
 		$should_summarize = 0;
 	}
 }
+
+$should_summarize = 0 if ($input_is_mbsum);
 
 if ($should_summarize) {
 	# Run mbsum on each gene
@@ -384,6 +416,8 @@ my $time = time();
 my $num_digits = get_num_digits({'NUMBER' => scalar(@quartets)});
 
 # Begin the server's job distribution
+my %complete_queue;
+my $complete_queue_max_size = 100;
 while ((!defined($total_connections) || $closed_connections != $total_connections) || $total_connections < $starting_connections) {
 	# Contains handles to clients which have sent information to the server
 	my @clients = $select->can_read(0);
@@ -398,6 +432,11 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 
 	# Handle each ready client individually
 	CLIENT: foreach my $client (@clients) {
+
+		if (scalar(keys %complete_queue) > $complete_queue_max_size) {
+			dump_quartets(\%complete_queue);
+			undef(%complete_queue);
+		}
 
 		# Client requesting new connection
 		if ($client == $sock) {
@@ -424,69 +463,7 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 				my $completed_quartet = $1;
 				my $quartet_statistics = $2;
 
-				# Check if this is the first to complete, if so we must create the archive
-				if (!-e "../$bucky_archive") {
-					system("tar", "cf", "../$bucky_archive", $completed_quartet, "--remove-files");
-				}
-				else {
-
-					# Perform appending of new gene to tarball in a fork as this can take some time
-					my $pid = fork();
-					if ($pid == 0) {
-
-						(my $quartet = $completed_quartet) =~ s/\.tar\.gz//;
-						$SIG{TERM} = sub { close(STDIN); close(STDOUT); close(STDERR); unlink(glob("$quartet*")); exit(0); };
-
-						# Obtain a file lock on archive so another process doesn't simultaneously try to add to it
-						open(my $bucky_archive_file, "<", "../$bucky_archive");
-						flock($bucky_archive_file, LOCK_EX) || die "Could not lock '$bucky_archive': $!.\n";
-
-						# Add completed gene
-						system("tar", "rf", "../$bucky_archive", $completed_quartet, "--remove-files");
-
-						# Release lock
-						flock($bucky_archive_file, LOCK_UN) || die "Could not unlock '$bucky_archive': $!.\n";
-						close($bucky_archive_file);
-
-						exit(0);
-					}
-					else {
-						push(@pids, $pid);
-					}
-				}
-
-				# Check if this is the first to complete, if so we must create CF output file
-				if (!-e "../$quartet_output") {
-					open(my $quartet_output_file, ">", "../$quartet_output");
-					#print {$quartet_output_file} "taxon1\ttaxon2\ttaxon3\ttaxon4\tCF12|34\tCF13|24\tCF14|23\n";
-					print {$quartet_output_file} "taxon1,taxon2,taxon3,taxon4,CF12.34,CF12.34_lo,CF12.34_hi,CF13.24,CF13.24_lo,CF13.24_hi,CF14.23,CF14.23_lo,CF14.23_hi\n";
-					print {$quartet_output_file} $quartet_statistics,"\n";
-					close($quartet_output);
-				}
-				else {
-
-					# Perform appending of new quartet in a fork as this can take some time
-					my $pid = fork();
-					if ($pid == 0) {
-
-						# Obtain a file lock on archive so another process doesn't simultaneously try to add to it
-						open(my $quartet_output_file, ">>", "../$quartet_output");
-						flock($quartet_output_file, LOCK_EX) || die "Could not lock '$quartet_output': $!.\n";
-						seek($quartet_output_file, 0, SEEK_END) || die "Could not seek '$quartet_output': $!.\n";
-
-						# Add completed gene
-						print {$quartet_output_file} $quartet_statistics,"\n";
-
-						# Release lock
-						flock($quartet_output_file, LOCK_UN) || die "Could not unlock '$quartet_output': $!.\n";
-						close($quartet_output_file);
-
-						exit(0);
-					}
-					else {
-						push(@pids, $pid);
-					}
-				}
+				$complete_queue{$completed_quartet} = $quartet_statistics;
 			}
 
 			# Client wants a new job
@@ -520,13 +497,16 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 	}
 }
 
+# Dump remaining quartets
+dump_quartets(\%complete_queue);
+
 # Wait until all children have completed
 foreach my $pid (@pids) {
 	waitpid($pid, 0);
 }
 
 print "\n  All connections closed.\n";
-print "Total execution time: ", sec2human('TIME' => time() - $time), ".\n\n";
+print "Total execution time: ", sec2human(time() - $time), ".\n\n";
 
 rmdir("$initial_directory/$project_name/$mb_sum_dir");
 
@@ -626,6 +606,7 @@ sub client {
 			push(@unlink, "$quartet.input", "$quartet.out", "$quartet.cluster", "$quartet.concordance", "$quartet.gene");
 
 			# Run BUCKy on specified quartet
+			print "$bucky $bucky_settings -cf 0 -o $quartet -p $prune_file_path @sums\n";
 			system("$bucky $bucky_settings -cf 0 -o $quartet -p $prune_file_path @sums");
 			unlink($prune_file_path);
 
@@ -666,6 +647,74 @@ sub client {
 	}
 
 	exit(0);
+}
+
+sub dump_quartets {
+	my $quartets = shift;
+
+	my $pid = fork();
+	if ($pid == 0) {
+
+		my @completed_quartets = keys %{$quartets};
+		my @quartet_statistics = values %{$quartets};
+
+		# Check if this is the first to complete, if so we must create BUCKy tarball
+		if (!-e "../$bucky_archive") {
+			system("tar", "cf", "../$bucky_archive", @completed_quartets, "--remove-files");
+		}
+		else {
+			my @unlink;
+			foreach my $completed_quartet (@completed_quartets) {
+				(my $quartet = $completed_quartet) =~ s/\.tar\.gz//;
+				push(@unlink, glob("$quartet*"));
+			}
+			#$SIG{TERM} = sub { close(STDIN); close(STDOUT); close(STDERR); unlink(glob("$quartet*")); exit(0); };
+			$SIG{TERM} = sub { close(STDIN); close(STDOUT); close(STDERR); unlink(@unlink); exit(0); };
+
+			# Obtain a file lock on archive so another process doesn't simultaneously try to add to it
+			open(my $bucky_archive_file, "<", "../$bucky_archive");
+			flock($bucky_archive_file, LOCK_EX) || die "Could not lock '$bucky_archive': $!.\n";
+
+			# Add completed gene
+			system("tar", "rf", "../$bucky_archive", @completed_quartets, "--remove-files");
+
+			# Release lock
+			flock($bucky_archive_file, LOCK_UN) || die "Could not unlock '$bucky_archive': $!.\n";
+			close($bucky_archive_file);
+		}
+
+		# Check if this is the first to complete, if so we must create CF output file
+		if (!-e "../$quartet_output") {
+			open(my $quartet_output_file, ">", "../$quartet_output");
+			print {$quartet_output_file} "taxon1,taxon2,taxon3,taxon4,CF12.34,CF12.34_lo,CF12.34_hi,CF13.24,CF13.24_lo,CF13.24_hi,CF14.23,CF14.23_lo,CF14.23_hi\n";
+			foreach my $quartet (@quartet_statistics) {
+				print {$quartet_output_file} $quartet,"\n";
+			}
+			close($quartet_output);
+		}
+		else {
+			# Obtain a file lock on archive so another process doesn't simultaneously try to add to it
+			open(my $quartet_output_file, ">>", "../$quartet_output");
+			flock($quartet_output_file, LOCK_EX) || die "Could not lock '$quartet_output': $!.\n";
+			seek($quartet_output_file, 0, SEEK_END) || die "Could not seek '$quartet_output': $!.\n";
+
+			# Add completed gene
+			#print {$quartet_output_file} @quartet_statistics,"\n";
+			foreach my $quartet (@quartet_statistics) {
+				print {$quartet_output_file} $quartet,"\n";
+			}
+
+			# Release lock
+			flock($quartet_output_file, LOCK_UN) || die "Could not unlock '$quartet_output': $!.\n";
+			close($quartet_output_file);
+		}
+		exit(0);
+	}
+	else {
+		push(@pids, $pid);
+	}
+
+	return;
 }
 
 sub parse_concordance_output {
@@ -803,6 +852,28 @@ sub parse_mb_log {
 		return {'NGEN' => $ngen, 'NRUNS' => $nruns, 'BURNINFRAC' => $burninfrac, 
 				'SAMPLEFREQ' => $samplefreq, 'TAXA' => \@taxa};
 	}
+}
+
+sub parse_mbsum_taxa {
+	my $mbsum_file_name = shift;
+
+	# Open the specified mbsum file and parse its taxa list
+
+	my @taxa;
+	my $in_translate_block = 0;
+	open(my $mbsum_file, "<", $mbsum_file_name);
+	while (my $line = <$mbsum_file>) {
+		$in_translate_block++ if ($line =~ /translate/);
+
+		if ($in_translate_block && $line =~ /\d+ (\S+)[,;]/) {
+			push(@taxa, $1);
+		}
+
+		undef($in_translate_block) if ($in_translate_block && $line =~ /\d+ (\S+);/);
+	}
+	close($mbsum_file);
+
+	return \@taxa;
 }
 
 sub run_mbsum {
@@ -1126,6 +1197,7 @@ Parallel execution of BUCKy on all possible quartets in a given alignment
   -n, --ngen             number of generations to run BUCKy MCMC chain (default: 1000000 generations)
   -o, --out-dir          name of the directory to store output files in (default: "bucky-" + Unix time of script invocation)
   -T, --n-threads        the number of forks ALL hosts running analyses can use concurrently (default: current number of free CPUs)
+  -s, --no-mbsum         informs the script that the input is a tarball containing output from mbsum
   --machine-file         file name containing hosts to ssh onto and perform analyses on, passwordless login MUST be enabled
                          for each host specified in this file
   --port                 specifies the port to utilize on the server (Default: 10003)
