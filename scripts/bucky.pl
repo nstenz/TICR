@@ -230,6 +230,30 @@ if ($input_is_mbsum) {
 	# Move into MrBayes output directory
 	chdir($mb_sum_dir);
 
+	# Remove subdirectories that may have been a part of the tarball
+	my @dirs;
+	my @gene_roots;
+	foreach my $gene (@genes) {
+		(my $gene_root = $gene) =~ s/.*\///;
+		next if ($gene eq $gene_root);
+
+		# Move mbsum files so they are no longer in subdirectories
+		if (!-d $gene) {
+			system("mv $gene $gene_root");
+			push(@gene_roots, $gene_root);
+		}
+		else {
+			push(@dirs, $gene);
+			#splice(@genes, $index, 1);
+		}
+	}
+	@genes = @gene_roots if (@gene_roots);
+
+	# Remove any subdirectories that may have been in the input
+	foreach my $dir (@dirs) {
+		remove_tree($dir);
+	}
+
 	# Parse one of input genes, assumes same taxa are present in ALL genes
 	@taxa = @{parse_mbsum_taxa($genes[0])};
 
@@ -1197,7 +1221,7 @@ Parallel execution of BUCKy on all possible quartets in a given alignment
   -n, --ngen             number of generations to run BUCKy MCMC chain (default: 1000000 generations)
   -o, --out-dir          name of the directory to store output files in (default: "bucky-" + Unix time of script invocation)
   -T, --n-threads        the number of forks ALL hosts running analyses can use concurrently (default: current number of free CPUs)
-  -s, --no-mbsum         informs the script that the input is a tarball containing output from mbsum
+  -s, --no-mbsum         informs the script that the input is a tarball containing output already parsed by mbsum
   --machine-file         file name containing hosts to ssh onto and perform analyses on, passwordless login MUST be enabled
                          for each host specified in this file
   --port                 specifies the port to utilize on the server (Default: 10003)
