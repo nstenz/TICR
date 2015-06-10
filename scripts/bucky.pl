@@ -76,8 +76,8 @@ GetOptions(
 
 
 # Get paths to required executables
-my $mbsum = check_path_for_exec("mbsum");
 my $bucky = check_path_for_exec("bucky");
+my $mbsum = check_path_for_exec("mbsum") if (!$input_is_mbsum);
 
 my $archive = shift(@ARGV);
 
