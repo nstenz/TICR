@@ -180,15 +180,16 @@ mkdir($mb_sum_dir) or die "Could not create '$mb_sum_dir': $!.\n" if (!-e $mb_su
 # Check if completed genes from a previous run exist
 my %complete_quartets;
 if (-e $bucky_archive && -e $quartet_output) {
-	print "\nArchive containing completed quartets found for this dataset found in '$bucky_archive'.\n";
-	print "Completed quartets within in this archive will be removed from the job queue.\n";
+	print "Archive containing completed quartets found for this dataset found in '$bucky_archive'.\n";
+	print "Completed quartets within in this archive will be removed from the job queue.\n\n";
 
 	# Because it takes longer to append to a tarball than append to a text file, the tarball most
 	# likely has fewer quartet entries in it, we must therefore account for this ensuring that
 	# the tarball and csv have the same quartet entries 
 
 	# See which quartets in the tarball are complete
-	chomp(my @complete_quartets_tarball = `tar tf $init_dir/$bucky_archive`);
+	#chomp(my @complete_quartets_tarball = `tar tf $init_dir/$bucky_archive`);
+	chomp(my @complete_quartets_tarball = `tar tf $init_dir/$project_name/$bucky_archive`);
 
 	# Add quartets to a hash for easier lookup
 	my %complete_quartets_tarball;
@@ -197,7 +198,8 @@ if (-e $bucky_archive && -e $quartet_output) {
 	}
 
 	# Load csv into memory
-	open(my $quartet_output_file, "<", $quartet_output);
+	#open(my $quartet_output_file, "<", $quartet_output);
+	open(my $quartet_output_file, "<", "$init_dir/$project_name/$quartet_output");
 	(my @quartet_info = <$quartet_output_file>);
 	close($quartet_output_file);
 
@@ -205,7 +207,8 @@ if (-e $bucky_archive && -e $quartet_output) {
 	my $header = shift(@quartet_info);
 
 	# Rewrite csv to include only quartets also contained in tarball
-	open($quartet_output_file, ">", $quartet_output);
+	#open($quartet_output_file, ">", $quartet_output);
+	open($quartet_output_file, ">", "$init_dir/$project_name/$quartet_output");
 	print {$quartet_output_file} $header;
 	foreach my $quartet (@quartet_info) {
 		my ($taxon1, $taxon2, $taxon3, $taxon4) = split(",", $quartet);
@@ -403,7 +406,12 @@ foreach my $machine (@machines) {
 
 		# Send MrBayes summaries to remote machines
 		if ($machine ne $server_hostname) {
-			system("scp", "-q", $mbsum_archive, $machine.":/tmp");
+			if ($input_is_mbsum) {
+				system("scp", "-q", "$mb_sum_dir/$mbsum_archive", $machine.":/tmp");
+			}
+			else {
+				system("scp", "-q", $mbsum_archive, $machine.":/tmp");
+			}
 		}
 
 		# Execute this perl script on the given machine
@@ -630,8 +638,7 @@ sub client {
 			push(@unlink, "$quartet.input", "$quartet.out", "$quartet.cluster", "$quartet.concordance", "$quartet.gene");
 
 			# Run BUCKy on specified quartet
-			print "$bucky $bucky_settings -cf 0 -o $quartet -p $prune_file_path @sums\n";
-			system("$bucky $bucky_settings -cf 0 -o $quartet -p $prune_file_path @sums");
+			system($bucky, split(" ", $bucky_settings), "-cf", 0, "-o", $quartet, "-p", $prune_file_path, @sums);
 			unlink($prune_file_path);
 
 			# Zip and tarball the results
@@ -642,7 +649,6 @@ sub client {
 			my $split_info = parse_concordance_output("$quartet.concordance", scalar(@sums));
 
 			# Archive and compress results
-			#system("tar", "czf", $quartet_archive_name, @results, "--remove-files");
 			system("tar", "czf", $quartet_archive_name, @results);
 
 			# Send the results back to the server if this is a remote client
@@ -682,31 +688,6 @@ sub dump_quartets {
 		my @completed_quartets = keys %{$quartets};
 		my @quartet_statistics = values %{$quartets};
 
-		# Check if this is the first to complete, if so we must create BUCKy tarball
-		if (!-e "../$bucky_archive") {
-			system("tar", "cf", "../$bucky_archive", @completed_quartets, "--remove-files");
-		}
-		else {
-			my @unlink;
-			foreach my $completed_quartet (@completed_quartets) {
-				(my $quartet = $completed_quartet) =~ s/\.tar\.gz//;
-				push(@unlink, glob("$quartet*"));
-			}
-			#$SIG{TERM} = sub { close(STDIN); close(STDOUT); close(STDERR); unlink(glob("$quartet*")); exit(0); };
-			$SIG{TERM} = sub { close(STDIN); close(STDOUT); close(STDERR); unlink(@unlink); exit(0); };
-
-			# Obtain a file lock on archive so another process doesn't simultaneously try to add to it
-			open(my $bucky_archive_file, "<", "../$bucky_archive");
-			flock($bucky_archive_file, LOCK_EX) || die "Could not lock '$bucky_archive': $!.\n";
-
-			# Add completed gene
-			system("tar", "rf", "../$bucky_archive", @completed_quartets, "--remove-files");
-
-			# Release lock
-			flock($bucky_archive_file, LOCK_UN) || die "Could not unlock '$bucky_archive': $!.\n";
-			close($bucky_archive_file);
-		}
-
 		# Check if this is the first to complete, if so we must create CF output file
 		if (!-e "../$quartet_output") {
 			open(my $quartet_output_file, ">", "../$quartet_output");
@@ -732,6 +713,32 @@ sub dump_quartets {
 			flock($quartet_output_file, LOCK_UN) || die "Could not unlock '$quartet_output': $!.\n";
 			close($quartet_output_file);
 		}
+
+		# Check if this is the first to complete, if so we must create BUCKy tarball
+		if (!-e "../$bucky_archive") {
+			system("tar", "cf", "../$bucky_archive", @completed_quartets, "--remove-files");
+		}
+		else {
+			my @unlink;
+			foreach my $completed_quartet (@completed_quartets) {
+				(my $quartet = $completed_quartet) =~ s/\.tar\.gz//;
+				push(@unlink, glob("$quartet*"));
+			}
+			#$SIG{TERM} = sub { close(STDIN); close(STDOUT); close(STDERR); unlink(glob("$quartet*")); exit(0); };
+			$SIG{TERM} = sub { close(STDIN); close(STDOUT); close(STDERR); unlink(@unlink); exit(0); };
+
+			# Obtain a file lock on archive so another process doesn't simultaneously try to add to it
+			open(my $bucky_archive_file, "<", "../$bucky_archive");
+			flock($bucky_archive_file, LOCK_EX) || die "Could not lock '$bucky_archive': $!.\n";
+
+			# Add completed gene
+			system("tar", "rf", "../$bucky_archive", @completed_quartets, "--remove-files");
+
+			# Release lock
+			flock($bucky_archive_file, LOCK_UN) || die "Could not unlock '$bucky_archive': $!.\n";
+			close($bucky_archive_file);
+		}
+
 		exit(0);
 	}
 	else {
@@ -1031,6 +1038,7 @@ sub receive_file {
 }
 
 sub INT_handler {
+	#dump_quartets(\%complete_queue);
 
 	# Kill ssh process(es) spawn by this script
 	foreach my $pid (@pids) {
