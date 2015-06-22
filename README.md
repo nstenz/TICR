@@ -21,7 +21,7 @@ Jump to:
 4. [mbsum and BUCKy](http://www.stat.wisc.edu/~ane/bucky/downloads.html)
 	* mbsum: Summarizes the output from MrBayes into the required format for BUCKy.
 	* BUCKy: Quantifies observed discordance between genes.
-5. [Quartet MaxCut](http://sagi.haifa.ac.il/~ssagi/QMC)
+5. [Quartet MaxCut](http://research.haifa.ac.il/~ssagi/software/QMCN.tar.gz)
 	* Used to generate a population tree based on concordance factors of four-taxon sets present in the dataset.
 6. [R](http://cran.rstudio.com/)
 	* Used to read and draw Newick trees, also used to check for tree incongruence.
