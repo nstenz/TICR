@@ -59,6 +59,8 @@ my $project_name = "bucky-".int(time());
 my $alpha = 1;
 my $ngen = 1000000;
 
+my @unlink;
+
 # Read commandline settings
 GetOptions(
 	"no-forks"          => \$no_forks,
@@ -228,7 +230,8 @@ my @genes;
 if ($input_is_mbsum) {
 
 	# Unarchive input genes 
-	chomp(@genes = `tar xvf $init_dir/$archive -C $mb_sum_dir`);
+	#chomp(@genes = `tar xvf $init_dir/$archive -C $mb_sum_dir`);
+	chomp(@genes = `tar xvf $init_dir/$project_name/$archive -C $mb_sum_dir`);
 
 	# Move into MrBayes output directory
 	chdir($mb_sum_dir);
@@ -312,7 +315,7 @@ chdir("..");
 
 # Determine whether or not we need to run mbsum on the specified input
 my $should_summarize = 1;
-if (-e $mbsum_archive && $input_is_dir) {
+if (-e $mbsum_archive && $input_is_dir && !$input_is_mbsum) {
 	chomp(my @sums = `tar tf $mbsum_archive`) || die "Something appears to be wrong with '$mbsum_archive'.\n";
 
 	# Check that each gene has actually been summarized, if not redo the summaries
@@ -495,6 +498,8 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 				my $completed_quartet = $1;
 				my $quartet_statistics = $2;
 
+				push(@unlink, glob("$completed_quartet*"));
+				print "will unlink ", glob("$completed_quartet*"),"\n";
 				$complete_queue{$completed_quartet} = $quartet_statistics;
 			}
 
@@ -589,7 +594,9 @@ sub client {
 	my @unlink;
 
 	# Change signal handling so killing the server kills these processes and cleans up
-	$SIG{HUP}  = sub {unlink($0, $bucky); unlink(@sums); unlink($mbsum_archive) if defined($mbsum_archive); kill -15, $$; };
+	$SIG{HUP} = sub {unlink($0, $bucky); unlink(@sums); unlink($mbsum_archive) if defined($mbsum_archive); kill -15, $$; };
+	#$SIG{HUP} = sub { unlink($0, $bucky); unlink(@sums); unlink($mbsum_archive) if ($server_ip ne $ip); kill -15, $$; };
+	$SIG{TERM} = sub { unlink(glob("$quartet*")) if (defined($quartet)); exit(0); };
 
 	# Connect to the server
 	my $sock = new IO::Socket::INET(
@@ -610,7 +617,10 @@ sub client {
 
 			# If client is local this needs to be defined now
 			chomp(@sums = `tar tf $mbsum_archive`) if (!@sums);
-			$SIG{TERM} = sub { close(STDIN); close(STDOUT); close(STDERR); unlink(glob("$quartet*")); kill -9, $$; exit(0); };
+			#$SIG{TERM} = sub { close(STDIN); close(STDOUT); close(STDERR); unlink(glob("$quartet*")); kill -9, $$; exit(0); };
+			#$SIG{TERM} = sub { kill -15, $$; unlink(glob("$quartet*")); exit(0); };
+			#$SIG{TERM} = sub { kill -15, $$; print "removing the following: ",glob("$quartet*"),"\n"; unlink(glob("$quartet*")); exit(0); };
+			#$SIG{TERM} = sub { print "removing the following: ",glob("$quartet*"),"\n"; unlink(glob("$quartet*")); exit(0); };
 
 			# Create prune tree file contents required for BUCKy
 			my $count = 0;
@@ -674,6 +684,12 @@ sub client {
 		}
 		unlink($0, $bucky);
 		unlink(@sums, $mbsum_archive);
+		#if ($server_ip ne $ip) {
+		#	unlink(@sums, $mbsum_archive);
+		#}
+		#else {
+		#	unlink(@sums);
+		#}
 	}
 
 	exit(0);
@@ -744,6 +760,9 @@ sub dump_quartets {
 	else {
 		push(@pids, $pid);
 	}
+
+	unlink(@unlink);
+	undef(@unlink);
 
 	return;
 }
@@ -1039,6 +1058,8 @@ sub receive_file {
 
 sub INT_handler {
 	#dump_quartets(\%complete_queue);
+
+	unlink(@unlink);
 
 	# Kill ssh process(es) spawn by this script
 	foreach my $pid (@pids) {
