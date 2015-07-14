@@ -362,7 +362,8 @@ if ($should_summarize) {
 
 	# Archive and zip mb summaries
 	chdir($mb_sum_dir);
-	system("tar", "czf", $mbsum_archive, glob("$archive_root_no_ext*.sum"));
+	#system("tar", "czf", $mbsum_archive, glob("$archive_root_no_ext*.sum"));
+	system("tar", "czf", $mbsum_archive, glob("*.sum"));
 	system("cp", $mbsum_archive, "..");
 	chdir("..");
 }
@@ -469,7 +470,10 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 	CLIENT: foreach my $client (@clients) {
 
 		if (scalar(keys %complete_queue) > $complete_queue_max_size) {
+			my $cwd = abs_path(".");
+			chdir($mb_sum_dir);
 			dump_quartets(\%complete_queue);
+			chdir($cwd);
 			undef(%complete_queue);
 		}
 
@@ -499,7 +503,6 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 				my $quartet_statistics = $2;
 
 				push(@unlink, glob("$completed_quartet*"));
-				print "will unlink ", glob("$completed_quartet*"),"\n";
 				$complete_queue{$completed_quartet} = $quartet_statistics;
 			}
 
@@ -755,14 +758,17 @@ sub dump_quartets {
 			close($bucky_archive_file);
 		}
 
+		unlink(@unlink);
+		undef(@unlink);
+
 		exit(0);
 	}
 	else {
 		push(@pids, $pid);
 	}
 
-	unlink(@unlink);
-	undef(@unlink);
+#	unlink(@unlink);
+#	undef(@unlink);
 
 	return;
 }
@@ -896,7 +902,8 @@ sub parse_mb_log {
 	close($log_file);
 
 	if (defined($burnin)) {
-		return {'SAMPLEFREQ' => $samplefreq, 'NRUNS' => $nruns, 'BURNIN' => $burnin };
+		#return {'SAMPLEFREQ' => $samplefreq, 'NRUNS' => $nruns, 'BURNIN' => $burnin };
+		return {'SAMPLEFREQ' => $samplefreq, 'NRUNS' => $nruns, 'BURNIN' => $burnin, 'TAXA' => \@taxa};
 	}
 	else {
 		return {'NGEN' => $ngen, 'NRUNS' => $nruns, 'BURNINFRAC' => $burninfrac, 
