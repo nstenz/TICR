@@ -6,6 +6,11 @@
 
 # See how these functions are used in file example.r
 
+# Branches with 0 discordance cause infinite numbers and NaN likelihoods,
+# so we need to avoid that.
+maxBranchLength <- 30 # arbitrary, to replace infinite coalescent units
+minObsCF <- exp(-maxBranchLength)/3 # minimum expected minor CF
+
 stepwise.test.tree = function(cf, guidetree, search="heuristic", method="PLL",
                               kbest=5, maxiter=100, startT="panmixia"){
 # search: "heuristic" (method etc. ignored) or
@@ -23,6 +28,13 @@ stepwise.test.tree = function(cf, guidetree, search="heuristic", method="PLL",
  tax2id = 1:Ntip; names(tax2id)=guidetree$tip.label
  M = nrow(cf) # 27405: number of quartets with data
  cf.obs = as.matrix(cf[,5:7])
+ # next: if any observed CF == 0.0, change it to some very small value.
+ maxBranchLength <- max(maxBranchLength, max(guidetree$edge.length))
+ minObsCF <- exp(-maxBranchLength)/3 # minimum expected minor CF
+ minObsCF <- min(minObsCF, min(cf.obs[cf.obs>0]))
+ cf.obs[cf.obs==0] <- minObsCF
+ # not re-normalizing each row to sum up to 1, but minObsCF should be < 3.2e-14
+ # so the sum of each row should be almost equal to 1 up to rounding error. 
  logCFsum = sum(log(cf.obs)) 
  dat.names = as.matrix(cf[,1:4]) # -> taxon names as characters, not factors
  dat.leaves = matrix(tax2id[dat.names],nrow=M,ncol=4)
@@ -446,6 +458,13 @@ test.one.species.tree <- function(cf,guidetree,prep,edge.keep,plot=FALSE){
   
   M = nrow(cf) # number of quartets with data
   cf.obs = as.matrix(cf[,5:7])
+  # next: if any observed CF == 0.0, change it to some very small value.
+  maxBranchLength <- max(maxBranchLength, max(guidetree$edge.length))
+  minObsCF <- exp(-maxBranchLength)/3 # minimum expected minor CF
+  minObsCF <- min(minObsCF, min(cf.obs[cf.obs>0]))
+  cf.obs[cf.obs==0] <- minObsCF
+  # not re-normalizing each row to sum up to 1, but minObsCF should be < 3.2e-14
+  # so the sum of each row should be almost equal to 1 up to rounding error. 
   logCFsum = sum(log(cf.obs))
   tab0 = c(.01,.04,.05,.90)                # expected proportions of p-values
   names(tab0)=c(".01",".05",".10","large") # tab0*M:  .01    .05     .10   large
