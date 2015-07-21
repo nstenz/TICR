@@ -39,7 +39,6 @@ cat("outgroup:", ifelse(is.null(outgroup),"last taxon",outgroup),"\n")
 tree.filename <- paste(filename.root, ".QMC.tre", sep="")
 buckyCF.filename <- paste(filename.root, ".CFs.csv", sep="")
 # required format looks like this: specific column names,
-# and taxa sorted alphabetically within each quartet:
 #
 # taxon1 taxon2 taxon3 taxon4 CF12.34 CF13.24 CF14.23
 #  A_Lyr Bsch_0 Da1_12  Dra_0   0.987  0.0065  0.0065
@@ -126,7 +125,7 @@ Nquartets <- sapply(part1[intEdge],length)*sapply(part2[intEdge],length) *
 dat <- data.frame(edge   = rep(intEdge,Nquartets),
                   taxon1 = rep(NA,sum(Nquartets)),
                   taxon2 = NA, taxon3=NA, taxon4=NA,
-                  quartet= NA
+                  quartet= NA, CF=NA
                   )
 j <- 0 # indexes the row
 for (i in intEdge){
@@ -171,13 +170,45 @@ if (dim(cf)[1] != choose(ntax,4)) # 27405 with 30 taxa
   cat("Warning: it looks like there are missing (or extra) quartets in\n\t",
       buckyCF.filename,".\n\tRead ",dim(cf)[1]," rows, expected ",
       choose(ntax,4)," quartets.\n",sep="")
-
+# create an extra matrix and columns "t1" ... "t4" to identify
+# the 4-taxon set uniquely: 4 taxon names sorted alphabetically
+cf$taxon1 <- as.character(cf$taxon1); cf$t1 <- NA
+cf$taxon2 <- as.character(cf$taxon2); cf$t2 <- NA
+cf$taxon3 <- as.character(cf$taxon3); cf$t3 <- NA
+cf$taxon4 <- as.character(cf$taxon4); cf$t4 <- NA
+taxonOrder <- matrix(NA,dim(cf)[1],4)
+for (i in 1:dim(cf)[1]) taxonOrder[i,] <- order(cf[i,1:4])
+for (i in 1:4){
+  for (j in 1:4){
+    ind <- taxonOrder[,i]==j
+    cf[ind,paste0("t",i)] <- cf[ind,paste0("taxon",j)]
+  }
+}
+# extract CF value for the quartet resolution in the tree
 for (i in 1:Nqrt){
  ind <- NA
- ind <- which(cf$taxon1==dat$taxon1[i] & cf$taxon2==dat$taxon2[i] &
-              cf$taxon3==dat$taxon3[i] & cf$taxon4==dat$taxon4[i])
- resolution <- paste("CF",sub('\\|','.',dat$quartet[i]),sep="")
- # above: turns 13|24 into CF13.24 , or 12|34 into CF12.34
+ ind <- which(cf$t1==dat$taxon1[i] & cf$t2==dat$taxon2[i] &
+              cf$t3==dat$taxon3[i] & cf$t4==dat$taxon4[i])
+ if (length(ind)>1)
+   stop(paste("found multiple rows in CF file for these taxa:",
+              dat$taxon1[i],dat$taxon2[i],dat$taxon3[i],dat$taxon4[i]))
+ if (length(ind)==0)
+   next
+ # resolution needs to be "CF12.34" or "CF13.24" or "CF14.23"
+ #            with numbers corresponding to ordering of taxa in cf.
+ # The line below would work turn 13|24 into CF13.24 or 12|34 into CF12.34,
+ # but assumes that the taxa are alphabetically ordered in cf. 
+ # resolution <- paste("CF",sub('\\|','.',dat$quartet[i]),sep="")
+ 
+ # The more complicated solution below allows for any ordering of
+ # the 4 taxa ('taxon1', ... , 'taxon4') in cf. 
+ sister2one <- as.numeric(substr(dat$quartet[i], 2,2)) # taxoni sister to taxon1, in dat
+ leftclade <- sort(taxonOrder[ind,c(1,sister2one)])    # in cf
+ rightclade <- setdiff(1:4,leftclade) # will be sorted
+ if (leftclade[1]==1){
+   resolution <- paste0("CF1",leftclade[2],".",rightclade[1],rightclade[2])
+ } else
+   resolution <- paste0("CF1",rightclade[2],".",leftclade[1],leftclade[2])
  dat$CF[i] <- cf[ind,resolution]
 }
 ind <- which(is.na(dat$CF)) # to identify quartet with missing CF data
