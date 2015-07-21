@@ -235,6 +235,9 @@ tre$edge.length[extEdge] <- 0.1 # this is arbitrary: no meaning
 tre$edge.length[newdat$edge] <- newdat$edge.length
 tre$edge.length[tre$edge.length<0] <- 0
 # might happen if the edge is contradicted by data, i.e. if mean CF <1/3
+tre$edge.length[tre$edge.length==Inf] <- 30 # arbitrary large
+# happens if the edge has CF 1.0, corresponding to infinite # coalescent units.
+# replacing by 30. exp(-30) is close enough to 0 discordance.
 
 write.tree(tre,tree.withbranchlengths.filename)
 cat("\twrote tree with branch lengths (coalescent units) to\n\t ",tree.withbranchlengths.filename,"\n")
