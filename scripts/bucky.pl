@@ -337,7 +337,7 @@ if ($should_summarize) {
 	foreach my $gene (@genes) {
 
 		# Wait until a CPU is available
-		until(okay_to_run()) {};
+		until(okay_to_run(\@pids)) {};
 		my $pid = fork();
 
 		# The child fork
@@ -973,19 +973,23 @@ sub run_mbsum {
 }
 
 sub okay_to_run {
+	my $pids = shift;
 
 	# Free up a CPU by sleeping for 10 ms
 	usleep(10000);
 
-	my $current_forks = scalar(@pids);
-	foreach my $index (reverse(0 .. $#pids)) {
-		my $pid = $pids[$index];
+	my $current_forks = scalar(@{$pids});
+	foreach my $index (reverse(0 .. $current_forks - 1)) {
+		next if ($index < 0);
+
+		my $pid = @{$pids}[$index];
 		my $wait = waitpid($pid, WNOHANG);
 
 		# Successfully reaped child
 		if ($wait > 0) {
 			$current_forks--;
-			splice(@pids, $index, 1);
+			#splice(@pids, $index, 1);
+			splice(@{$pids}, $index, 1);
 		}
 	}
 
