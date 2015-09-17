@@ -1625,7 +1625,7 @@ sub check_path_for_exec {
 	my $exec_path;
 	foreach my $dir (@path_dirs) {
 		$dir .= "/" if ($dir !~ /\/$/);
-		$exec_path = abs_path($dir.$exec) if (-e $dir.$exec);
+		$exec_path = abs_path($dir.$exec) if (-e $dir.$exec && -x $dir.$exec && !-d $dir.$exec);
 	}
 
 	die "Could not find the following executable: '$exec'. This script requires this program in your path.\n" if (!defined($exec_path));
