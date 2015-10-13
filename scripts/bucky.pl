@@ -597,7 +597,7 @@ sub client {
 	my @unlink;
 
 	# Change signal handling so killing the server kills these processes and cleans up
-	$SIG{HUP} = sub {unlink($0, $bucky); unlink(@sums); unlink($mbsum_archive) if defined($mbsum_archive); kill -15, $$; };
+	$SIG{HUP} = sub { unlink($0, $bucky); unlink(@sums); unlink($mbsum_archive) if defined($mbsum_archive); kill -15, $$; };
 	#$SIG{HUP} = sub { unlink($0, $bucky); unlink(@sums); unlink($mbsum_archive) if ($server_ip ne $ip); kill -15, $$; };
 	$SIG{TERM} = sub { unlink(glob("$quartet*")) if (defined($quartet)); exit(0); };
 
@@ -659,7 +659,8 @@ sub client {
 			my $quartet_archive_name = "$quartet.tar.gz";
 
 			# Open concordance file and parse out the three possible resolutions
-			my $split_info = parse_concordance_output("$quartet.concordance", scalar(@sums));
+			my $num_genes = get_used_genes("$quartet.out");
+			my $split_info = parse_concordance_output("$quartet.concordance", $num_genes);
 
 			# Archive and compress results
 			system("tar", "czf", $quartet_archive_name, @results);
@@ -710,7 +711,7 @@ sub dump_quartets {
 		# Check if this is the first to complete, if so we must create CF output file
 		if (!-e "../$quartet_output") {
 			open(my $quartet_output_file, ">", "../$quartet_output");
-			print {$quartet_output_file} "taxon1,taxon2,taxon3,taxon4,CF12.34,CF12.34_lo,CF12.34_hi,CF13.24,CF13.24_lo,CF13.24_hi,CF14.23,CF14.23_lo,CF14.23_hi\n";
+			print {$quartet_output_file} "taxon1,taxon2,taxon3,taxon4,CF12.34,CF12.34_lo,CF12.34_hi,CF13.24,CF13.24_lo,CF13.24_hi,CF14.23,CF14.23_lo,CF14.23_hi,ngenes\n";
 			foreach my $quartet (@quartet_statistics) {
 				print {$quartet_output_file} $quartet,"\n";
 			}
@@ -771,6 +772,27 @@ sub dump_quartets {
 #	undef(@unlink);
 
 	return;
+}
+
+sub get_used_genes {
+	my $file_name = shift;
+
+	# Number of genes actually used by BUCKy
+	my $num_genes;
+
+	# Open up the BUCKy output file
+	open(my $bucky_out, "<", $file_name);
+	while (my $line = <$bucky_out>) {
+		if ($line =~ /Read (\d+) genes with a total of/) {
+			$num_genes = $1;
+			last;
+		}
+	}
+	close($bucky_out);
+
+	die "Error determining number of genes used by BUCKy ($file_name).\n" if (!defined($num_genes));
+
+	return $num_genes;
 }
 
 sub parse_concordance_output {
@@ -863,6 +885,9 @@ sub parse_concordance_output {
 		#$return .= "0(0,0)";
 		$return .= "0,0,0";
 	}
+
+	# Append number of genes used
+	$return .= ",$ngenes";
 
 	return $return;
 }
