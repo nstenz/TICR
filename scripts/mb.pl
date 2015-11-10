@@ -22,6 +22,7 @@ my $port = 10002;
 
 # Stores executing machine hostnames
 my @machines;
+my %machines;
 
 # Path to text file containing computers to run on
 my $machine_file_path;
@@ -82,11 +83,43 @@ $input_is_dir++ if (-d $archive);
 
 # Determine which machines we will run the analyses on
 if (defined($machine_file_path)) {
+
+	# Get list of machines
 	print "Fetching machine names listed in '$machine_file_path'...\n";
 	open(my $machine_file, '<', $machine_file_path);
 	chomp(@machines = <$machine_file>);
 	close($machine_file);
-	print "  $_\n" foreach (@machines);
+
+	# Check that we can connect to specified machines
+	foreach my $index (0 .. $#machines) {
+		my $machine = $machines[$index];
+		print "  Testing connection to: $machine...\n";
+
+		# Attempt to ssh onto machine with a five second timeout
+		my $ssh_test = `timeout 5 ssh -v $machine exit 2>&1`;
+
+		# Look for machine's IP in test connection
+		my $machine_ip;
+		if ($ssh_test =~ /Connecting to \S+ \[(\S+)\] port \d+\./s) {
+			$machine_ip = $1;
+		}
+
+		# Could connect but passwordless login not enabled
+		if ($ssh_test =~ /Are you sure you want to continue connecting \(yes\/no\)/s) {
+			print "    Connection to $machine failed, removing from list of useable machines (passwordless login not enabled).\n";
+			splice(@machines, $index, 1);
+		}
+		# Successful connection
+		elsif (defined($machine_ip)) {
+			print "    Connection to $machine [$machine_ip] successful.\n";
+			$machines{$machine} = $machine_ip;
+		}
+		# Unsuccessful connection
+		else {
+			print "    Connection to $machine failed, removing from list of useable machines.\n";
+			splice(@machines, $index, 1);
+		}
+	}
 }
 
 print "\nScript was called as follows:\n$invocation\n";
@@ -126,7 +159,8 @@ else {
 	foreach my $file (@contents) {
 		if (-l $file) {
 			$file =~ s/\Q$project_name\E\///;
-			$archive = $file;
+			#$archive = $file;
+			$archive = "$project_name/$file";
 			$found_name = 1;
 		}
 	}
@@ -232,7 +266,14 @@ foreach my $machine (@machines) {
 
 		# Execute this perl script on the given machine
 		# -tt forces pseudo-terminal allocation and lets us stop remote processes
-		exec("ssh", "-tt", "$machine", "perl", "/tmp/$script_name", "--server-ip=$server_ip");
+		if ($machines{$machine} ne $server_ip) {
+			exec("ssh", "-tt", "$machine", "perl", "/tmp/$script_name", "--server-ip=$server_ip");
+		}
+		else {
+			exec("perl", "/tmp/$script_name", "--server-ip=$server_ip");
+
+		}
+
 		exit(0);
 	}
 	else {
@@ -836,7 +877,8 @@ sub INT_handler {
 
 	# Kill ssh process(es) spawn by this script
 	foreach my $pid (@pids) {
-		kill(9, $pid);
+		#kill(9, $pid);
+		kill(1, $pid);
 	}
 
 	# Move into gene directory
