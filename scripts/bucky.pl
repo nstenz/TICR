@@ -23,6 +23,7 @@ my $port = 10003;
 
 # Stores executing machine hostnames
 my @machines;
+my %machines;
 
 # Path to text file containing computers to run on
 my $machine_file_path;
@@ -93,11 +94,43 @@ $input_is_dir++ if (-d $archive);
 
 # Determine which machines we will run the analyses on
 if (defined($machine_file_path)) {
+
+	# Get list of machines
 	print "Fetching machine names listed in '$machine_file_path'...\n";
 	open(my $machine_file, '<', $machine_file_path);
 	chomp(@machines = <$machine_file>);
 	close($machine_file);
-	print "  $_\n" foreach (@machines);
+
+	# Check that we can connect to specified machines
+	foreach my $index (0 .. $#machines) {
+		my $machine = $machines[$index];
+		print "  Testing connection to: $machine...\n";
+
+		# Attempt to ssh onto machine with a five second timeout
+		my $ssh_test = `timeout 5 ssh -v $machine exit 2>&1`;
+
+		# Look for machine's IP in test connection
+		my $machine_ip;
+		if ($ssh_test =~ /Connecting to \S+ \[(\S+)\] port \d+\./s) {
+			$machine_ip = $1;
+		}
+
+		# Could connect but passwordless login not enabled
+		if ($ssh_test =~ /Are you sure you want to continue connecting \(yes\/no\)/s) {
+			print "    Connection to $machine failed, removing from list of useable machines (passwordless login not enabled).\n";
+			splice(@machines, $index, 1);
+		}
+		# Successful connection
+		elsif (defined($machine_ip)) {
+			print "    Connection to $machine [$machine_ip] successful.\n";
+			$machines{$machine} = $machine_ip;
+		}
+		# Unsuccessful connection
+		else {
+			print "    Connection to $machine failed, removing from list of useable machines.\n";
+			splice(@machines, $index, 1);
+		}
+	}
 }
 
 print "\nScript was called as follows:\n$invocation\n\n";
@@ -230,8 +263,8 @@ my @genes;
 if ($input_is_mbsum) {
 
 	# Unarchive input genes 
-	#chomp(@genes = `tar xvf $init_dir/$archive -C $mb_sum_dir`);
 	chomp(@genes = `tar xvf $init_dir/$project_name/$archive -C $mb_sum_dir`);
+	die "No genes found in '$archive'.\n" if (!@genes);
 
 	# Move into MrBayes output directory
 	chdir($mb_sum_dir);
@@ -388,7 +421,10 @@ print "Job server successfully created.\n";
 # Should probably do this earlier
 # Determine server hostname and add to machines if none were specified by the user
 chomp(my $server_hostname = `hostname`);
-push(@machines, $server_hostname) if (scalar(@machines) == 0);
+if (scalar(@machines) == 0) {
+	push(@machines, $server_hostname);
+	$machines{$server_hostname} = $server_ip;
+}
 
 my @pids;
 foreach my $machine (@machines) {
@@ -409,18 +445,24 @@ foreach my $machine (@machines) {
 		system("scp", "-q", $bucky, $machine.":/tmp");
 
 		# Send MrBayes summaries to remote machines
-		if ($machine ne $server_hostname) {
-			if ($input_is_mbsum) {
-				system("scp", "-q", "$mb_sum_dir/$mbsum_archive", $machine.":/tmp");
-			}
-			else {
-				system("scp", "-q", $mbsum_archive, $machine.":/tmp");
-			}
+		if ($machines{$machine} ne $server_ip) {
+		   if ($input_is_mbsum) {
+			   system("scp", "-q", "$mb_sum_dir/$mbsum_archive", $machine.":/tmp");
+		   }
+		   else {
+			   system("scp", "-q", $mbsum_archive, $machine.":/tmp");
+		   }
 		}
 
 		# Execute this perl script on the given machine
 		# -tt forces pseudo-terminal allocation and lets us stop remote processes
-		exec("ssh", "-tt", $machine, "perl", "/tmp/$script_name", $mbsum_archive, "--server-ip=$server_ip");
+		if ($machines{$machine} ne $server_ip) {
+			exec("ssh", "-tt", $machine, "perl", "/tmp/$script_name", $mbsum_archive, "--server-ip=$server_ip");
+		}
+		else {
+			exec("perl", "/tmp/$script_name", "$init_dir/$project_name/$mb_sum_dir/$mbsum_archive", "--server-ip=$server_ip");
+		}
+
 		exit(0);
 	}
 	else {
@@ -554,7 +596,6 @@ sub client {
 	my ($opt_name, $server_ip) = @_;	
 
 	chdir("/tmp");
-	my $mb = "/tmp/mb";
 	my $bucky = "/tmp/bucky";
 
 	my $pgrp = $$;
@@ -570,7 +611,10 @@ sub client {
 
 	# Extract files from mbsum archive
 	my @sums;
-	if (-e $mbsum_archive) {
+	if ($mbsum_archive =~ /\//) {
+		chomp(@sums = `tar tf $mbsum_archive`);
+	}
+	else {
 		chomp(@sums = `tar xvf $mbsum_archive`);
 	}
 
@@ -597,8 +641,8 @@ sub client {
 	my @unlink;
 
 	# Change signal handling so killing the server kills these processes and cleans up
-	$SIG{HUP} = sub { unlink($0, $bucky); unlink(@sums); unlink($mbsum_archive) if defined($mbsum_archive); kill -15, $$; };
-	#$SIG{HUP} = sub { unlink($0, $bucky); unlink(@sums); unlink($mbsum_archive) if ($server_ip ne $ip); kill -15, $$; };
+	#$SIG{HUP} = sub { unlink($0, $bucky); unlink(@sums); unlink($mbsum_archive) if defined($mbsum_archive); kill -15, $$; };
+	$SIG{HUP} = sub { unlink($0, $bucky); unlink(@sums); unlink($mbsum_archive); kill -15, $$; };
 	$SIG{TERM} = sub { unlink(glob("$quartet*")) if (defined($quartet)); exit(0); };
 
 	# Connect to the server
@@ -619,11 +663,7 @@ sub client {
 			my $bucky_settings = $2;
 
 			# If client is local this needs to be defined now
-			chomp(@sums = `tar tf $mbsum_archive`) if (!@sums);
-			#$SIG{TERM} = sub { close(STDIN); close(STDOUT); close(STDERR); unlink(glob("$quartet*")); kill -9, $$; exit(0); };
-			#$SIG{TERM} = sub { kill -15, $$; unlink(glob("$quartet*")); exit(0); };
-			#$SIG{TERM} = sub { kill -15, $$; print "removing the following: ",glob("$quartet*"),"\n"; unlink(glob("$quartet*")); exit(0); };
-			#$SIG{TERM} = sub { print "removing the following: ",glob("$quartet*"),"\n"; unlink(glob("$quartet*")); exit(0); };
+			#chomp(@sums = `tar tf $mbsum_archive`) if (!@sums);
 
 			# Create prune tree file contents required for BUCKy
 			my $count = 0;
@@ -1097,10 +1137,11 @@ sub INT_handler {
 
 	unlink(@unlink);
 
-	# Kill ssh process(es) spawn by this script
+	# Kill ssh process(es) spawned by this script
 	foreach my $pid (@pids) {
 		#kill(-9, $pid);
-		kill(15, $pid);
+		#kill(15, $pid);
+		kill(1, $pid);
 	}
 
 	# Move into gene directory
