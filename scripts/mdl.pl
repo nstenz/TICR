@@ -12,6 +12,8 @@ use Getopt::Long;
 use Cwd qw(abs_path);
 use Time::HiRes qw(time usleep);
 
+my $os_name = $^O;
+
 # prevents printing a recursion warning which appear with large datasets
 no warnings 'recursion';
 
@@ -26,6 +28,7 @@ my $port = 10001;
 
 # Stores executing machine hostnames
 my @machines;
+my %machines;
 
 # Path to text file containing computers to run on
 my $machine_file_path;
@@ -111,11 +114,43 @@ run_cmd("ln -s $align_abs_path $project_name/$align_root") if (! -e "$project_na
 
 # Determine which machines we will run the analyses on
 if (defined($machine_file_path)) {
+
+	# Get list of machines
 	print "Fetching machine names listed in '$machine_file_path'...\n";
 	open(my $machine_file, '<', $machine_file_path);
 	chomp(@machines = <$machine_file>);
 	close($machine_file);
-	print "  $_\n" foreach (@machines);
+
+	# Check that we can connect to specified machines
+	foreach my $index (0 .. $#machines) {
+		my $machine = $machines[$index];
+		print "  Testing connection to: $machine...\n";
+
+		# Attempt to ssh onto machine with a five second timeout
+		my $ssh_test = `timeout 5 ssh -v $machine exit 2>&1`;
+
+		# Look for machine's IP in test connection
+		my $machine_ip;
+		if ($ssh_test =~ /Connecting to \S+ \[(\S+)\] port \d+\./s) {
+			$machine_ip = $1;
+		}
+
+		# Could connect but passwordless login not enabled
+		if ($ssh_test =~ /Are you sure you want to continue connecting \(yes\/no\)/s) {
+			print "    Connection to $machine failed, removing from list of useable machines (passwordless login not enabled).\n";
+			splice(@machines, $index, 1);
+		}
+		# Successful connection
+		elsif (defined($machine_ip)) {
+			print "    Connection to $machine [$machine_ip] successful.\n";
+			$machines{$machine} = $machine_ip;
+		}
+		# Unsuccessful connection
+		else {
+			print "    Connection to $machine failed, removing from list of useable machines.\n";
+			splice(@machines, $index, 1);
+		}
+	}
 }
 
 chdir($project_name);
@@ -660,20 +695,31 @@ sub run_mdl {
 
 			(my $script_name = $script_path) =~ s/.*\///;
 
-			# Send this script to the machine
-			system("scp", "-q", $script_path, $machine.":/tmp");
+			# Send over/copy files depending on where analyses will be run
+			if ($machines{$machine} ne $server_ip) {
+				# Send this script to the machine
+				system("scp", "-q", $script_path, $machine.":/tmp");
 
-			# Send PAUP executable to the machine
-			system("scp", "-q", $paup , $machine.":/tmp");
+				# Send PAUP executable to the machine
+				system("scp", "-q", $paup , $machine.":/tmp");
 
-			# Send reduced alignments to remote machines
-			if ($machine ne $server_hostname) {
+				# Send reduced alignments to remote machines
 				system("scp -q $align_root_no_ext-reduced-*.nex $machine:/tmp");
-			}
 
-			# Execute this perl script on the given machine
-			# -tt forces pseudo-terminal allocation and lets us stop remote processes
-			exec("ssh", "-tt", $machine, "perl", "/tmp/$script_name", "--server-ip=$server_ip");
+				# Execute this perl script on the given machine
+				# -tt forces pseudo-terminal allocation and lets us stop remote processes
+				exec("ssh", "-tt", $machine, "perl", "/tmp/$script_name", "--server-ip=$server_ip");
+			}
+			else {
+				# Send this script to the machine
+				system("cp", $script_path, $machine.":/tmp");
+
+				# Send PAUP executable to the machine
+				system("cp", $paup , $machine.":/tmp");
+
+				# Execute this perl script on the given machine
+				exec("perl", "/tmp/$script_name", "--server-ip=$server_ip");
+			}
 
 			exit(0);
 		}
@@ -1141,7 +1187,9 @@ sub write_partitions {
 
 	my @reduced_files = glob("$align_root_no_ext-reduced-*.nex");
 	print "\nCompressing and archiving parsimony-informative character only alignments... ";
-	system("tar czf $align_root_no_ext-reduced.tar.gz @reduced_files --remove-files");
+	#system("tar czf $align_root_no_ext-reduced.tar.gz @reduced_files --remove-files");
+	system("tar", "czf", "$align_root_no_ext-reduced.tar.gz", @reduced_files);
+	unlink(@reduced_files);
 	print "done.\n";
 
 	chdir($gene_dir);	
@@ -1152,7 +1200,9 @@ sub write_partitions {
 
 	# Tarball and zip the resulting sequence partitions
 	print "Compressing and archiving partition sequence files... ";
-	system("tar czf $align_root_no_ext.tar.gz @gene_file_names --remove-files");
+	#system("tar czf $align_root_no_ext.tar.gz @gene_file_names --remove-files");
+	system("tar", "czf", "$align_root_no_ext.tar.gz", @gene_file_names);
+	unlink(@gene_file_names);
 	system("mv $align_root_no_ext.tar.gz ..");
 	print "done.\n";
 
@@ -1161,7 +1211,9 @@ sub write_partitions {
 	chdir($partition_dir);
 	my @partitioning_files = glob("$align_root_no_ext*.partitions*");
 	print "Compressing and archiving resulting mdl partitioning output... ";
-	system("tar czf $align_root_no_ext-partitions.tar.gz @partitioning_files --remove-files");
+	#system("tar czf $align_root_no_ext-partitions.tar.gz @partitioning_files --remove-files");
+	system("tar", "czf", "$align_root_no_ext-partitions.tar.gz", @partitioning_files);
+	unlink(@partitioning_files);
 	system("mv $align_root_no_ext-partitions.tar.gz ..");
 	print "done.\n";
 
@@ -1170,7 +1222,9 @@ sub write_partitions {
 	chdir($score_dir);
 	my @score_files = glob("$align_root_no_ext-all-scores-*");
 	print "Compressing and archiving individual parsimony scores for each block... ";
-	system("tar czf $align_root_no_ext-scores.tar.gz @score_files --remove-files");
+	#system("tar czf $align_root_no_ext-scores.tar.gz @score_files --remove-files");
+	system("tar", "czf", "$align_root_no_ext-scores.tar.gz", @score_files);
+	unlink(@score_files);
 	system("mv $align_root_no_ext-scores.tar.gz ..");
 	print "done.\n";
 
