@@ -224,7 +224,8 @@ if (-e $bucky_archive && -e $quartet_output) {
 
 	# See which quartets in the tarball are complete
 	#chomp(my @complete_quartets_tarball = `tar tf $init_dir/$bucky_archive`);
-	chomp(my @complete_quartets_tarball = `tar tf $init_dir/$project_name/$bucky_archive`);
+	#chomp(my @complete_quartets_tarball = `tar tf $init_dir/$project_name/$bucky_archive`);
+	chomp(my @complete_quartets_tarball = `tar -tf $init_dir/$project_name/$bucky_archive`);
 
 	# Add quartets to a hash for easier lookup
 	my %complete_quartets_tarball;
@@ -263,7 +264,8 @@ my @genes;
 if ($input_is_mbsum) {
 
 	# Unarchive input genes 
-	chomp(@genes = `tar xvf $init_dir/$project_name/$archive -C $mb_sum_dir`);
+	#chomp(@genes = `tar xvf $init_dir/$project_name/$archive -C $mb_sum_dir`);
+	chomp(@genes = `tar -xvf $init_dir/$project_name/$archive -C $mb_sum_dir`);
 	die "No genes found in '$archive'.\n" if (!@genes);
 
 	# Move into MrBayes output directory
@@ -296,18 +298,21 @@ if ($input_is_mbsum) {
 	# Parse one of input genes, assumes same taxa are present in ALL genes
 	@taxa = @{parse_mbsum_taxa($genes[0])};
 
-	system("tar", "czf", $mbsum_archive, @genes);
+	#system("tar", "czf", $mbsum_archive, @genes);
+	system("tar", "-czf", $mbsum_archive, @genes);
 }
 else {
 
 	# Unarchive input genes 
-	chomp(@genes = `tar xvf $init_dir/$archive -C $mb_out_dir`);
+	#chomp(@genes = `tar xvf $init_dir/$archive -C $mb_out_dir`);
+	chomp(@genes = `tar -xvf $init_dir/$archive -C $mb_out_dir`);
 
 	# Move into MrBayes output directory
 	chdir($mb_out_dir);
 
 	# Unzip a single gene
-	chomp(my @mb_files = `tar xvf $genes[0]`);
+	#chomp(my @mb_files = `tar xvf $genes[0]`);
+	chomp(my @mb_files = `tar -xvf $genes[0]`);
 
 	# Locate the log file output by MrBayes
 	my $log_file_name;
@@ -349,7 +354,8 @@ chdir("..");
 # Determine whether or not we need to run mbsum on the specified input
 my $should_summarize = 1;
 if (-e $mbsum_archive && $input_is_dir && !$input_is_mbsum) {
-	chomp(my @sums = `tar tf $mbsum_archive`) || die "Something appears to be wrong with '$mbsum_archive'.\n";
+	#chomp(my @sums = `tar tf $mbsum_archive`) || die "Something appears to be wrong with '$mbsum_archive'.\n";
+	chomp(my @sums = `tar -tf $mbsum_archive`) || die "Something appears to be wrong with '$mbsum_archive'.\n";
 
 	# Check that each gene has actually been summarized, if not redo the summaries
 	if (scalar(@sums) != scalar(@genes)) {
@@ -396,7 +402,8 @@ if ($should_summarize) {
 	# Archive and zip mb summaries
 	chdir($mb_sum_dir);
 	#system("tar", "czf", $mbsum_archive, glob("$archive_root_no_ext*.sum"));
-	system("tar", "czf", $mbsum_archive, glob("*.sum"));
+	#system("tar", "czf", $mbsum_archive, glob("*.sum"));
+	system("tar", "-czf", $mbsum_archive, glob("*.sum"));
 	system("cp", $mbsum_archive, "..");
 	chdir("..");
 }
@@ -612,10 +619,12 @@ sub client {
 	# Extract files from mbsum archive
 	my @sums;
 	if ($mbsum_archive =~ /\//) {
-		chomp(@sums = `tar tf $mbsum_archive`);
+		#chomp(@sums = `tar tf $mbsum_archive`);
+		chomp(@sums = `tar -tf $mbsum_archive`);
 	}
 	else {
-		chomp(@sums = `tar xvf $mbsum_archive`);
+		#chomp(@sums = `tar xvf $mbsum_archive`);
+		chomp(@sums = `tar -xvf $mbsum_archive`);
 	}
 
 	# Spawn more clients
@@ -703,7 +712,8 @@ sub client {
 			my $split_info = parse_concordance_output("$quartet.concordance", $num_genes);
 
 			# Archive and compress results
-			system("tar", "czf", $quartet_archive_name, @results);
+			#system("tar", "czf", $quartet_archive_name, @results);
+			system("tar", "-czf", $quartet_archive_name, @results);
 
 			# Send the results back to the server if this is a remote client
 			if ($server_ip ne $ip) {
@@ -776,7 +786,8 @@ sub dump_quartets {
 
 		# Check if this is the first to complete, if so we must create BUCKy tarball
 		if (!-e "../$bucky_archive") {
-			system("tar", "cf", "../$bucky_archive", @completed_quartets, "--remove-files");
+			#system("tar", "cf", "../$bucky_archive", @completed_quartets, "--remove-files");
+			system("tar", "-cf", "../$bucky_archive", @completed_quartets, "--remove-files");
 		}
 		else {
 			my @unlink;
@@ -792,7 +803,8 @@ sub dump_quartets {
 			flock($bucky_archive_file, LOCK_EX) || die "Could not lock '$bucky_archive': $!.\n";
 
 			# Add completed gene
-			system("tar", "rf", "../$bucky_archive", @completed_quartets, "--remove-files");
+			#system("tar", "rf", "../$bucky_archive", @completed_quartets, "--remove-files");
+			system("tar", "-rf", "../$bucky_archive", @completed_quartets, "--remove-files");
 
 			# Release lock
 			flock($bucky_archive_file, LOCK_UN) || die "Could not unlock '$bucky_archive': $!.\n";
@@ -1002,7 +1014,8 @@ sub run_mbsum {
 	my $tarball = shift;
 
 	# Unzip specified tarball
-	chomp(my @mb_files = `tar xvf $mb_out_dir$tarball -C $mb_out_dir`);
+	#chomp(my @mb_files = `tar xvf $mb_out_dir$tarball -C $mb_out_dir`);
+	chomp(my @mb_files = `tar -xvf $mb_out_dir$tarball -C $mb_out_dir`);
 
 	# Determine name for this partition's log file
 	my $log_file_name;
