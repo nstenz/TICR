@@ -265,7 +265,7 @@ my @genes;
 if ($input_is_mbsum) {
 
 	# Unarchive input genes 
-	chomp(@genes = `tar xvf $init_dir/$project_name/$archive -C $mb_sum_dir 2>&1`);
+	chomp(@genes = `tar xvf '$init_dir/$project_name/$archive' -C $mb_sum_dir 2>&1`);
 	@genes = map { s/x //; $_ } @genes if ($os_name eq "darwin");
 
 	die "No genes found in '$archive'.\n" if (!@genes);
@@ -558,7 +558,8 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 				my $completed_quartet = $1;
 				my $quartet_statistics = $2;
 
-				push(@unlink, glob("$completed_quartet*"));
+				#push(@unlink, glob("$completed_quartet*"));
+				push(@unlink, glob(abs_path(".")."/$completed_quartet*"));
 				$complete_queue{$completed_quartet} = $quartet_statistics;
 			}
 
@@ -613,6 +614,7 @@ sub client {
 	my $bucky = "/tmp/bucky";
 
 	my $pgrp = $$;
+	setpgrp();
 
 	# Determine this host's IP
 	chomp(my $ip = `dig +short myip.opendns.com \@resolver1.opendns.com`); 
@@ -656,7 +658,6 @@ sub client {
 	my @unlink;
 
 	# Change signal handling so killing the server kills these processes and cleans up
-	#$SIG{HUP} = sub { unlink($0, $bucky); unlink(@sums); unlink($mbsum_archive) if defined($mbsum_archive); kill -15, $$; };
 	$SIG{HUP} = sub { unlink($0, $bucky); unlink(@sums); unlink($mbsum_archive); kill -15, $$; };
 	$SIG{TERM} = sub { unlink(glob("$quartet*")) if (defined($quartet)); exit(0); };
 
@@ -763,6 +764,8 @@ sub dump_quartets {
 		my @completed_quartets = keys %{$quartets};
 		my @quartet_statistics = values %{$quartets};
 
+		$SIG{TERM} = sub { close(STDIN); close(STDOUT); close(STDERR); unlink(@unlink); exit(0); };
+
 		# Check if this is the first to complete, if so we must create CF output file
 		if (!-e "../$quartet_output") {
 			open(my $quartet_output_file, ">", "../$quartet_output");
@@ -801,7 +804,7 @@ sub dump_quartets {
 				push(@unlink, glob("$quartet*"));
 			}
 			#$SIG{TERM} = sub { close(STDIN); close(STDOUT); close(STDERR); unlink(glob("$quartet*")); exit(0); };
-			$SIG{TERM} = sub { close(STDIN); close(STDOUT); close(STDERR); unlink(@unlink); exit(0); };
+			#$SIG{TERM} = sub { close(STDIN); close(STDOUT); close(STDERR); unlink(@unlink); exit(0); };
 
 			# Obtain a file lock on archive so another process doesn't simultaneously try to add to it
 			open(my $bucky_archive_file, "<", "../$bucky_archive");
@@ -1012,6 +1015,9 @@ sub parse_mbsum_taxa {
 	}
 	close($mbsum_file);
 
+	# Check that we actually parsed something, otherwise input is improperly formatted/not mbsum output
+	die "No taxa parsed for file '$mbsum_file_name', does '$archive' actually contain mbsum output?.\n" if (!@taxa);
+
 	return \@taxa;
 }
 
@@ -1154,7 +1160,7 @@ sub INT_handler {
 	#dump_quartets(\%complete_queue);
 
 	unlink(@unlink);
-
+	
 	# Kill ssh process(es) spawned by this script
 	foreach my $pid (@pids) {
 		#kill(-9, $pid);
@@ -1163,9 +1169,11 @@ sub INT_handler {
 	}
 
 	# Move into gene directory
-	chdir("$initial_directory");
+	chdir("$initial_directory/$project_name");
 
-	# Try to delete directory five times, if it can't be deleted print an error message
+	rmdir($mb_out_dir);
+
+	# Try to delete directory once per second for five seconds, if it can't be deleted print an error message
 	# I've found this method is necessary for analyses performed on AFS drives
 	my $count = 0;
 	until (!-e $mb_sum_dir || $count == 5) {
