@@ -11,6 +11,8 @@ use Fcntl qw(:flock);
 use File::Path qw(remove_tree);
 use Time::HiRes qw(time usleep);
 
+my $os_name = $^O;
+
 # Turn on autoflush
 $|++;
 
@@ -199,6 +201,7 @@ if (-e $mb_archive) {
 
 # Unarchive input genes 
 chomp(my @genes = `tar xvf $init_dir/$archive -C $gene_dir`);
+@genes = map { s/x //; $_ } @genes if ($os_name eq "darwin");
 
 chdir($gene_dir);
 
@@ -244,7 +247,10 @@ print "Job server successfully created.\n";
 # Should probably do this earlier
 # Determine server hostname and add to machines if none were specified by the user
 chomp(my $server_hostname = `hostname`);
-push(@machines, $server_hostname) if (scalar(@machines) == 0);
+if (scalar(@machines) == 0) {
+	push(@machines, $server_hostname);
+	$machines{$server_hostname} = $server_ip;
+}
 
 my @pids;
 foreach my $machine (@machines) {
@@ -258,20 +264,27 @@ foreach my $machine (@machines) {
 
 		(my $script_name = $script_path) =~ s/.*\///;
 
-		# Send this script to the machine
-		system("scp", "-q", $script_path, $machine.":/tmp");
-
-		# Send MrBayes executable to the machine
-		system("scp", "-q", $mb, $machine.":/tmp");
-
-		# Execute this perl script on the given machine
-		# -tt forces pseudo-terminal allocation and lets us stop remote processes
+		# Move required datafiles to machines, initialize clients
 		if ($machines{$machine} ne $server_ip) {
+			# Send this script to the machine
+			system("scp", "-q", $script_path, $machine.":/tmp");
+
+			# Send MrBayes executable to the machine
+			system("scp", "-q", $mb, $machine.":/tmp");
+
+			# Execute this perl script on the given machine
+			# -tt forces pseudo-terminal allocation and lets us stop remote processes
 			exec("ssh", "-tt", "$machine", "perl", "/tmp/$script_name", "--server-ip=$server_ip");
 		}
 		else {
-			exec("perl", "/tmp/$script_name", "--server-ip=$server_ip");
+			# Send this script to the machine
+			system("cp", $script_path, "/tmp");
 
+			# Send MrBayes executable to the machine
+			system("cp", $mb, "/tmp");
+
+			# Execute this perl script on the given machine
+			exec("perl", "/tmp/$script_name", "--server-ip=$server_ip");
 		}
 
 		exit(0);
@@ -339,7 +352,8 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 				# Check if this is the first to complete, if so we must create the directory
 				my $completed_gene = $1;
 				if (!-e "../$mb_archive") {
-					system("tar", "cf", "../$mb_archive", "$completed_gene", "--remove-files");
+					system("tar", "cf", "../$mb_archive", $completed_gene);
+					unlink($completed_gene);
 				}
 				else {
 
@@ -352,7 +366,7 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 						flock($mb_archive_file, LOCK_EX) || die "Could not lock '$mb_archive_file': $!.\n";
 						
 						# Add completed gene
-						system("tar", "rf", "../$mb_archive", "$completed_gene", "--remove-files");
+						system("tar", "rf", "../$mb_archive", $completed_gene);
 
 						# Release lock
 						flock($mb_archive_file, LOCK_UN) || die "Could not unlock '$mb_archive_file': $!.\n";
@@ -455,6 +469,7 @@ sub client {
 
 	#my $pgrp = getpgrp();
 	my $pgrp = $$;
+	setpgrp();
 
 	# Determine this host's IP
 	chomp(my $ip = `dig +short myip.opendns.com \@resolver1.opendns.com`); 
@@ -484,9 +499,7 @@ sub client {
 
 	# Change signal handling so killing the server kills these processes and cleans up
 	$SIG{CHLD} = 'IGNORE';
-	#$SIG{HUP}  = sub { unlink($0, $mb); kill -15, $$; exit(0); };
 	$SIG{HUP}  = sub { unlink($0, $mb); kill -15, $$; };
-	#$SIG{TERM} = sub { unlink(glob($gene."*")) if defined($gene); };
 	$SIG{TERM} = sub { unlink(glob($gene."*")) if defined($gene); exit(0)};
 
 	# Connect to the server
@@ -524,7 +537,8 @@ sub client {
 			# Zip and tarball the results
 			my @results = glob($gene."*");
 			my $gene_archive_name = "$gene.tar.gz";
-			system("tar", "czf", $gene_archive_name, @results, "--remove-files");
+			system("tar", "czf", $gene_archive_name, @results);
+			unlink(@results);
 
 			# Send the results back to the server if this is a remote client
 			if ($server_ip ne $ip) {
@@ -614,6 +628,7 @@ sub check_nonconvergent {
 
 	# Open tarball in genes directory
 	chomp(my @genes = `tar xvf $incomplete_archive -C $check_dir`);
+	@genes = map { s/x //; $_ } @genes if ($os_name eq "darwin");
 	@genes = sort { (local $a = $a) =~ s/.*-(\d+)-\d+\..*/$1/; 
 					(local $b = $b) =~ s/.*-(\d+)-\d+\..*/$1/; 
 					$a <=> $b } @genes;
@@ -631,6 +646,7 @@ sub check_nonconvergent {
 	foreach my $gene (@genes) {
 
 		chomp(my @contents = `tar xvf $gene`);
+		@contents = map { s/x //; $_ } @contents if ($os_name eq "darwin");
 
 		(my $log_file_path = $gene) =~ s/\.tar\.gz$/.log/;
 
@@ -728,6 +744,7 @@ sub remove_nonconvergent {
 
 	# Open tarball in genes directory
 	chomp(my @genes = `tar xvf $incomplete_archive -C $check_dir`);
+	@genes = map { s/x //; $_ } @genes if ($os_name eq "darwin");
 	@genes = sort { (local $a = $a) =~ s/.*-(\d+)-\d+\..*/$1/; 
 					(local $b = $b) =~ s/.*-(\d+)-\d+\..*/$1/; 
 					$a <=> $b } @genes;
@@ -745,6 +762,7 @@ sub remove_nonconvergent {
 	foreach my $gene (@genes) {
 
 		chomp(my @contents = `tar xvf $gene`);
+		@contents = map { s/x //; $_ } @contents if ($os_name eq "darwin");
 
 		(my $log_file_path = $gene) =~ s/\.tar\.gz$/.log/;
 
@@ -786,8 +804,8 @@ sub remove_nonconvergent {
 
 	# Recreate archive with remaining genes
 	if (@genes) {
-		#system("tar", "czf", $incomplete_archive, @genes, "--remove-files");
-		system("tar", "cf", $incomplete_archive, @genes, "--remove-files");
+		system("tar", "cf", $incomplete_archive, @genes);
+		unlink(@genes);
 		system("mv", $incomplete_archive, "..");
 	}
 	else {
@@ -882,7 +900,8 @@ sub INT_handler {
 	}
 
 	# Move into gene directory
-	chdir("$initial_directory");
+	#chdir("$initial_directory");
+	chdir("$initial_directory/$project_name");
 
 	# Try to delete directory five times, if it can't be deleted print an error message
 	# I've found this method is necessary for analyses performed on AFS drives
