@@ -681,7 +681,10 @@ sub run_mdl {
 
 	# Determine server hostname and add to machines if none were specified by the user
 	chomp(my $server_hostname = `hostname`);
-	push(@machines, $server_hostname) if (scalar(@machines) == 0);
+	if (scalar(@machines) == 0) {
+		push(@machines, $server_hostname);
+		$machines{$server_hostname} = $server_ip;
+	}
 
 	my @pids;
 	foreach my $machine (@machines) {
@@ -712,10 +715,10 @@ sub run_mdl {
 			}
 			else {
 				# Send this script to the machine
-				system("cp", $script_path, $machine.":/tmp");
+				system("cp", $script_path, "/tmp");
 
 				# Send PAUP executable to the machine
-				system("cp", $paup , $machine.":/tmp");
+				system("cp", $paup , "/tmp");
 
 				# Execute this perl script on the given machine
 				exec("perl", "/tmp/$script_name", "--server-ip=$server_ip");
@@ -1310,6 +1313,7 @@ sub client {
 	my $paup = "/tmp/paup";
 
 	my $pgrp = $$;
+	setpgrp();
 
 	# Determine this host's IP
 	chomp(my $ip = `dig +short myip.opendns.com \@resolver1.opendns.com`); 
