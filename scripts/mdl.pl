@@ -662,14 +662,16 @@ sub run_mdl {
 	}
 	print "\n";
 
-	# TODO: more reliable way to get external IP
-	#chomp(my $server_ip = `wget -qO- ipecho.net/plain`); # Returns the external IP address of this computer
-	chomp(my $server_ip = `dig +short myip.opendns.com \@resolver1.opendns.com`); # Returns the external IP address of this computer
-	die "Could not establish the IP address for the server.\n" if (!defined $server_ip);
+	# Returns the external IP address of this computer
+	chomp(my $server_ip = `dig +short myip.opendns.com \@resolver1.opendns.com 2>&1`);
+	if ($server_ip !~ /(?:[0-9]{1,3}\.){3}[0-9]{1,3}/) {
+		print "Could not determine external IP address, only local clients will be created.\n";
+		$server_ip = "127.0.0.1";
+	}
 
 	# Initialize a server
 	my $sock = IO::Socket::INET->new(
-		LocalAddr  => $server_ip.":".$port,
+		LocalPort  => $port,
 		Blocking   => 0,
 		Reuse      => 1,
 		Listen     => SOMAXCONN,
@@ -683,7 +685,13 @@ sub run_mdl {
 	chomp(my $server_hostname = `hostname`);
 	if (scalar(@machines) == 0) {
 		push(@machines, $server_hostname);
-		$machines{$server_hostname} = $server_ip;
+		$machines{$server_hostname} = "127.0.0.1";
+	}
+	elsif (scalar(@machines) == 1) {
+		# Check if the user input only the local machine in the config
+		if ($machines{$machines[0]} eq $server_ip) {
+			$machines{$machines[0]} = "127.0.0.1";
+		}
 	}
 
 	my @pids;
@@ -699,7 +707,7 @@ sub run_mdl {
 			(my $script_name = $script_path) =~ s/.*\///;
 
 			# Send over/copy files depending on where analyses will be run
-			if ($machines{$machine} ne $server_ip) {
+			if ($machines{$machine} ne "127.0.0.1" && $machines{$machine} ne $server_ip) {
 				# Send this script to the machine
 				system("scp", "-q", $script_path, $machine.":/tmp");
 
@@ -721,7 +729,7 @@ sub run_mdl {
 				system("cp", $paup , "/tmp");
 
 				# Execute this perl script on the given machine
-				exec("perl", "/tmp/$script_name", "--server-ip=$server_ip");
+				exec("perl", "/tmp/$script_name", "--server-ip=127.0.0.1");
 			}
 
 			exit(0);
@@ -1317,7 +1325,11 @@ sub client {
 
 	# Determine this host's IP
 	chomp(my $ip = `dig +short myip.opendns.com \@resolver1.opendns.com`); 
-	die "Could not establish an IP address for host.\n" if (!defined($ip));
+
+	# Set IP to localhost if we don't have internet
+	if ($ip !~ /(?:[0-9]{1,3}\.){3}[0-9]{1,3}/) {
+		$ip = "127.0.0.1";
+	}
 
 	# Spawn more clients
 	my @pids;
@@ -1368,7 +1380,7 @@ sub client {
 			@unlink = ($score_file_name);
 
 			# Change where alignment is located in command
-			$paup_command =~ s/\.\.\///s if ($server_ip ne $ip);
+			$paup_command =~ s/\.\.\///s if ($server_ip ne "127.0.0.1" && $server_ip ne $ip);
 
 			open(my $std_out, ">&", *STDOUT);
 			close(STDOUT);
