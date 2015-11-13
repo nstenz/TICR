@@ -85,6 +85,9 @@ GetOptions(
 my $bucky = check_path_for_exec("bucky");
 my $mbsum = check_path_for_exec("mbsum") if (!$input_is_mbsum);
 
+# Check that BUCKy version >= 1.4.4
+check_bucky_version($bucky);
+
 my $archive = shift(@ARGV);
 
 # Some error checking
@@ -1351,6 +1354,59 @@ sub combine {
 	}
 
 	return @comb;
+}
+
+sub check_bucky_version {
+	my $bucky = shift;
+
+	print "Checking for BUCKy version >= 1.4.4...\n";
+
+	# Run BUCKy with --version and extract version info
+	chomp(my @version_info = grep { /BUCKy version/ } `bucky --version`);
+	my $version_info = shift(@version_info);
+
+	die "  Could not determine BUCKy version.\n" if (!defined($version_info));
+
+	# Get the actual version number
+	my $version;
+	if ($version_info =~ /BUCKy\s+version\s+([^\s|,]+)/) {
+		$version = $1;
+	}
+	die "  Could not determine BUCKy version.\n" if (!defined($version_info));
+
+	# Version testing
+	#my @versions = qw/2.1b 1.2.1000 1 0.9.8 2.3 1.4.5 1.4.3 1.4 1.500.2 1.4.4 1.4.4.1/;
+	#foreach my $version (@versions) {
+
+	print "  BUCKy version: $version.\n";
+
+	# Split version number based on period delimiters
+	my @version_parts = split(/\./, $version);
+
+	# Future proofing if letters are ever used (we won't ever care about them)
+	@version_parts = map { s/[a-zA-Z]+//g; $_ } @version_parts;
+	die "  Error determining BUCKy version.\n" if (!@version_parts);
+
+	# Check that version is >= 1.4.4
+	if (defined($version_parts[0]) && $version_parts[0] > 1) {
+		print "  BUCKy version check passed.\n";
+		return;
+	}
+	elsif ((defined($version_parts[0]) && $version_parts[0] == 1) && (defined($version_parts[1]) && $version_parts[1] > 4)) {
+		print "  BUCKy version check passed.\n";
+		return;
+	}
+	elsif (((defined($version_parts[0]) && $version_parts[0] == 1) && (defined($version_parts[1]) && $version_parts[1] == 4)) 
+		  && defined($version_parts[2]) && $version_parts[2] >= 4) {
+		print "  BUCKy version check passed.\n";
+		return;
+	}
+	else {
+		die "  BUCKy version check failed, update to version >= 1.4.4.\n";
+	}
+
+	#print "\n";
+	#}
 }
 
 sub usage {
