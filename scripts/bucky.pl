@@ -410,11 +410,15 @@ if ($should_summarize) {
 die "\nAll quartets have already been completed.\n\n" if (!@quartets);
 
 # Returns the external IP address of this computer
-chomp(my $server_ip = `dig +short myip.opendns.com \@resolver1.opendns.com`);
+chomp(my $server_ip = `dig +short myip.opendns.com \@resolver1.opendns.com 2>&1`);
+if ($server_ip !~ /(?:[0-9]{1,3}\.){3}[0-9]{1,3}/) {
+	print "Could not determine external IP address, only local clients will be created.\n";
+	$server_ip = "127.0.0.1";
+}
 
 # Initialize a server
 my $sock = IO::Socket::INET->new(
-	LocalAddr  => $server_ip.":".$port,
+	LocalPort  => $port,
 	Blocking   => 0,
 	Reuse      => 1,
 	Listen     => SOMAXCONN,
@@ -429,7 +433,13 @@ print "Job server successfully created.\n";
 chomp(my $server_hostname = `hostname`);
 if (scalar(@machines) == 0) {
 	push(@machines, $server_hostname);
-	$machines{$server_hostname} = $server_ip;
+	$machines{$server_hostname} = "127.0.0.1";
+}
+elsif (scalar(@machines) == 1) {
+	# Check if the user input only the local machine in the config
+	if ($machines{$machines[0]} eq $server_ip) {
+		$machines{$machines[0]} = "127.0.0.1";
+	}
 }
 
 my @pids;
@@ -444,18 +454,17 @@ foreach my $machine (@machines) {
 
 		(my $script_name = $script_path) =~ s/.*\///;
 
-		# Send MrBayes summaries to remote machines
-		if ($machines{$machine} ne $server_ip) {
-		   if ($input_is_mbsum) {
-			   system("scp", "-q", "$mb_sum_dir/$mbsum_archive", $machine.":/tmp");
-		   }
-		   else {
-			   system("scp", "-q", $mbsum_archive, $machine.":/tmp");
-		   }
-		}
-
 		# Send over/copy files depending on where analyses will be run
-		if ($machines{$machine} ne $server_ip) {
+		if ($machines{$machine} ne "127.0.0.1" && $machines{$machine} ne $server_ip) {
+
+			# Send MrBayes summaries to remote machines
+			if ($input_is_mbsum) {
+				system("scp", "-q", "$mb_sum_dir/$mbsum_archive", $machine.":/tmp");
+			}
+			else {
+				system("scp", "-q", $mbsum_archive, $machine.":/tmp");
+			}
+
 			# Send this script to the machine
 			system("scp", "-q", $script_path, $machine.":/tmp");
 
@@ -474,7 +483,7 @@ foreach my $machine (@machines) {
 			system("cp", $bucky, "/tmp");
 
 			# Execute this perl script in client mode
-			exec("perl", "/tmp/$script_name", "$init_dir/$project_name/$mb_sum_dir/$mbsum_archive", "--server-ip=$server_ip");
+			exec("perl", "/tmp/$script_name", "$init_dir/$project_name/$mb_sum_dir/$mbsum_archive", "--server-ip=127.0.0.1");
 		}
 
 		exit(0);
@@ -618,7 +627,11 @@ sub client {
 
 	# Determine this host's IP
 	chomp(my $ip = `dig +short myip.opendns.com \@resolver1.opendns.com`); 
-	die "Could not establish an IP address for host.\n" if (not defined $ip);
+
+	# Set IP to localhost if we don't have internet
+	if ($ip !~ /(?:[0-9]{1,3}\.){3}[0-9]{1,3}/) {
+		$ip = "127.0.0.1";
+	}
 
 	# Determine file name of mbsum archive the client should use
 	my @ARGV = split(/\s+/, $invocation);
@@ -722,7 +735,7 @@ sub client {
 			system("tar", "czf", $quartet_archive_name, @results);
 
 			# Send the results back to the server if this is a remote client
-			if ($server_ip ne $ip) {
+			if ($server_ip ne "127.0.0.1" && $server_ip ne $ip) {
 				send_file({'FILE_PATH' => $quartet_archive_name, 'FILE_HANDLE' => $sock});	
 				unlink($quartet_archive_name);
 			}
