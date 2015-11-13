@@ -28,13 +28,6 @@ Jump to:
 	* also requires the ["ape"](http://cran.r-project.org/web/packages/ape/index.html) R library to be installed.
 
 ## Important Notes <a name="notes"></a>
-* Even if you only plan on running these scripts solely on a single computer, many still use ssh to spawn worker clients on the host computer. To ensure proper script execution, enter the following command in your terminal:
-
-    ```
-ssh localhost
-    ```
-
-	If a prompt appears asking for host authenticity verification, answer with 'yes' and then you should not experience any issues.
 * In order to function properly, any user-specified MrBayes block **MUST** allow logging to terminal.
 * For "accurate" MCMC convergence checks, the user must ensure that their specified diagnose frequency divides evenly into their specified total number of MCMC generations.
 * When specifying a machine file (i.e. --machine-file filename.txt) to outsource jobs run by mdl.pl, mb.pl, or bucky.pl, passwordless login via ssh **MUST** be enabled for each machine listed in the machine file. For instance, if the machine file contains the following text:
@@ -130,13 +123,13 @@ This script can be used to perform the parallelized execution of many MrBayes ru
 When running MrBayes, this script utilizes the zipped tarball created by mdl.pl as its input. For example, if the following command was used to partition an alignment:
 
 ```
-mdl.pl chromosome1.fa -b 100 -f 10000
+mdl.pl chromosome1.fa -b 100 -f 10000 -o chr1-mdl
 ```
 
 the required input for mb.pl would be named 'chromosome1.tar.gz'. Additionally, this script requires a file containing a properly formated MrBayes block (specified with -m or --mb-block flag). This MrBayes block contains the actual commands that will dictate how the script calls MrBayes. The following represents an example invocation:
 
 ```
-mb.pl chromosome1.tar.gz -m bayes.txt -o chr1-mb
+mb.pl chr1-mdl/chromosome1.tar.gz -m bayes.txt -o chr1-mb
 ```
 
 If the above command was for some reason cancelled, interrupted, or succesfully completed but perhaps had its output tarball modified using the --remove option, it is also possible to rerun only the needed partitions by specifying the previous output directory of the script as input like so:
@@ -149,7 +142,7 @@ mb.pl chr1-mb -m bayes.txt
 The terminal output of each MrBayes run is by default stored by this script, if the original MCMC analysis were run with the following command:
 
 ```
-mb.pl chromosome1.tar.gz -m bayes.txt -o chr1-mb
+mb.pl chr1-mdl/chromosome1.tar.gz -m bayes.txt -o chr1-mb
 ```
 
 this information, as well as the resulting tree and parameter files for each MrBayes analysis, would be expected to be located in a tarball named 'chromosome1.mb.tar'.
@@ -196,13 +189,13 @@ This script begins by summarizing the MrBayes output files for each individual p
 At the minimum this script only requires the tarball created by mb.pl as its input. For example, if the you used the following command to run MrBayes:
 
 ```
-mb.pl chromosome1.tar.gz -m bayes.txt -o chr1-mb
+mb.pl chr1-mdl/chromosome1.tar.gz -m bayes.txt -o chr1-mb
 ```
 
-the required input for bucky.pl would be named 'chromosome1.mb.tar'. The following represents an example invocation:
+the required input for bucky.pl would be located in chr1-mb/ and named 'chromosome1.mb.tar'. The following represents an example invocation:
 
 ```
-bucky.pl chromosome1.mb.tar -o chr1-bucky
+bucky.pl chr1-mb/chromosome1.mb.tar -o chr1-bucky
 ```
 
 If the above command was for some reason cancelled or interrupted, it is also possible to rerun only the needed quartets by specifying the previous output directory of the script as input like so:
