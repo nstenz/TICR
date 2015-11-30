@@ -209,7 +209,7 @@ The following table describes the support command-line options which can be spec
 
 | Option Flag(s) | Option Description | Default |
 |:--|:--:|:--:|
-| &#8209;a,&nbsp;&#8209;&#8209;alpha | value of alpha to use when running BUCKy | 1 |
+| &#8209;a,&nbsp;&#8209;&#8209;alpha | value of alpha to use when running BUCKy, use "infinity" for infinity| 1 |
 | &#8209;n,&nbsp;&#8209;&#8209;ngen | number of generations to run BUCKy MCMC chain | 1,000,000 generations |
 | &#8209;&#8209;machine&#8209;file | file name containing hosts to ssh onto and perform analyses on, passwordless login MUST be enabled | none |
 | &#8209;&#8209;port | specifies the port to utilize on the server | 10003 |
