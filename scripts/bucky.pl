@@ -69,7 +69,7 @@ my @unlink;
 GetOptions(
 	"no-forks"          => \$no_forks,
 	"machine-file=s"    => \$machine_file_path,
-	"alpha|a=f"         => \$alpha,
+	"alpha|a=s"         => \$alpha,
 	"ngen|n=i"          => \$ngen,
 	"port=i"            => \$port,
 	"no-mbsum|s"        => \$input_is_mbsum,
@@ -94,6 +94,7 @@ my $archive = shift(@ARGV);
 die "You must specify an archive file.\n\n", &usage if (!defined($archive));
 die "Could not locate '$archive', perhaps you made a typo.\n" if (!-e $archive);
 die "Could not locate '$machine_file_path'.\n" if (defined($machine_file_path) && !-e $machine_file_path);
+die "Invalid alpha for BUCKy specified, input must be a float or 'infinity'.\n" if ($alpha !~ /(^inf(inity)?)|(^\d+(\.\d+)?$)/i);
 
 # Input is a previous run directory, reuse information
 $input_is_dir++ if (-d $archive);
@@ -587,10 +588,16 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 
 					# Tell local clients to move into mbsum directory
 					if ($client_ip eq $server_ip) {
-						#print {$client} "CHDIR: ".abs_path($mb_sum_dir)."\n";
 						print {$client} "CHDIR: ".abs_path(".")."\n";
 					}
-					print {$client} "NEW: '$quartet' '-a $alpha -n $ngen'\n";
+
+					# Invocation changes if we want to use a prior of infinity
+					if ($alpha =~ /(^inf(inity)?)/i) {
+						print {$client} "NEW: '$quartet' '--use-independence-prior -n $ngen'\n";
+					}
+					else {
+						print {$client} "NEW: '$quartet' '-a $alpha -n $ngen'\n";
+					}
 					$job_number++;
 				}
 				else {
@@ -1418,7 +1425,7 @@ print <<EOF;
 @{[usage()]}
 Parallel execution of BUCKy on all possible quartets in a given alignment
 
-  -a, --alpha            value of alpha to use when running BUCKy (default: 1)      
+  -a, --alpha            value of alpha to use when running BUCKy, use "infinity" for infinity (default: 1)      
   -n, --ngen             number of generations to run BUCKy MCMC chain (default: 1000000 generations)
   -o, --out-dir          name of the directory to store output files in (default: "bucky-" + Unix time of script invocation)
   -T, --n-threads        the number of forks ALL hosts running analyses can use concurrently (default: current number of free CPUs)
