@@ -513,7 +513,7 @@ sub client {
 	my @unlink;
 
 	# Change signal handling so killing the server kills these processes and cleans up
-	$SIG{CHLD} = 'IGNORE';
+	#$SIG{CHLD} = 'IGNORE';
 	$SIG{HUP}  = sub { unlink($0, $mb); kill -15, $$; };
 	$SIG{TERM} = sub { unlink(glob($gene."*")) if defined($gene); exit(0)};
 
@@ -911,7 +911,8 @@ sub INT_handler {
 	# Kill ssh process(es) spawn by this script
 	foreach my $pid (@pids) {
 		#kill(9, $pid);
-		kill(1, $pid);
+		#kill(1, $pid);
+		kill(-1, $pid);
 	}
 
 	# Move into gene directory
