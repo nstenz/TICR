@@ -1612,25 +1612,39 @@ sub get_free_cpus {
 sub sec2human {
 	my $secs = shift;
 
+	# Constants
+	my $secs_in_min = 60;
+	my $secs_in_hour = 60 * 60;
+	my $secs_in_day = 24 * 60 * 60;
+
 	$secs = int($secs);
 
 	return "0 seconds" if (!$secs);
 
+	# Calculate units of time
+	my $days = int($secs / $secs_in_day);
+	my $hours = ($secs / $secs_in_hour) % 24;
+	my $mins = ($secs / $secs_in_min) % 60;
+	$secs = $secs % 60;
+
+	# Format return nicely
 	my $time;
-	if (int($secs / (24 * 60 * 60)) > 0) {
-		$time .= (int($secs / (24 * 60 * 60)) > 1).((int($secs / (24 * 60 * 60)) != 1) ? " days, " : " day, ");
+	if ($days) {
+		$time .= ($days != 1) ? "$days days, " : "$days day, ";
 	}
-	if (($secs / (60 * 60)) % 24 > 0) {
-		$time .= (($secs / (60 * 60)) % 24).((($secs / (60 * 60)) % 24 != 1) ? " hours, " : " hour, ");
+	if ($hours) {
+		$time .= ($hours != 1) ? "$hours hours, " : "$hours hour, ";
 	}
-	if (($secs / 60) % 60 > 0) {
-		$time .= (($secs / 60) % 60).(((($secs / 60) % 60) != 1) ? " minutes, " : " minute, ");
+	if ($mins) {
+		$time .= ($mins != 1) ? "$mins minutes, " : "$mins minute, ";
 	}
-	if (($secs % 60) > 0) {
-		$time .= ($secs % 60).((($secs % 60) != 1) ? " seconds " : " second ");
+	if ($secs) {
+		$time .= ($secs != 1) ? "$secs seconds " : "$secs second ";
+		print "MEOMWEOMWEOm\n";
 	}
 	else {
-		$time .= "0 seconds ";
+		# Remove comma
+		chop($time);
 	}
 	chop($time);
 
