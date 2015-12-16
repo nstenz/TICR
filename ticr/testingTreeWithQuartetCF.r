@@ -137,6 +137,7 @@ plot.species.tree <- function(guidetree,edge.keep){
   longedge <- which(sp.tree$edge.length > 2)
   if (length(longedge)>0)
     edgelabels(round(sp.tree$edge.length[longedge],2), longedge, frame="n", adj=c(.5,0))
+  #add.scale.bar(col="red",lcol="red")
 }
 
 test.one.species.tree <- function(cf,guidetree,prep,edge.keep,plot=TRUE,add2shape.outlier="adaptive",
@@ -293,7 +294,7 @@ test.one.species.tree <- function(cf,guidetree,prep,edge.keep,plot=TRUE,add2shap
   tab = table(pcat)
   res = chisq.test(tab, p=tab0) # p-value from X-squared and df=3
   # return tk as well? can be obtained fro cf.exp
-  return(list(alpha=alpha,minus.pll=minus.pll,X2=as.numeric(res$statistic),pval=res$p.value,
+  return(list(alpha=alpha,minus.pll=minus.pll,X2=as.numeric(res$statistic),chisq.pval=res$p.value,
               outlier.table=rbind(observed=tab,expected=tab0*M),
               outlier.pvalues=pval,cf.exp=cf.exp))
 }
@@ -513,7 +514,6 @@ stepwise.test.tree = function(cf, guidetree, search="heuristic", method="PLL", k
     pbeta(pe+dev,shape1=alpha*pe+shapeAdd[ind.tree],shape2=alpha*(1-pe)+2*shapeAdd[ind.tree],lower.tail=F) +
     pbeta(pe-dev,shape1=alpha*pe+shapeAdd[ind.tree],shape2=alpha*(1-pe)+2*shapeAdd[ind.tree],lower.tail=T)
   pval[pval>1] = 1
-  if (plot) { hist(pval, breaks=100, xlim=c(0,.5),col="tan") }
 
   pcat = cut(pval, breaks=c(0,.01,.05,.10,1),
                    labels=c(".01",".05",".10","large"),include.lowest=T)
@@ -661,7 +661,6 @@ stepwise.test.tree = function(cf, guidetree, search="heuristic", method="PLL", k
    #cat("\n\tX2   =",bestRes1$X2,"\n\tcrit.=",bestCriterion,"\n")}
   }
 
-# fixithere: include plots for final model, outlier p-values, cf.exp
   bestRes1 <- test.species.tree(edge2keep.current, plot=T, fullOutput=T)
   return(list(Nedge=Nedge,edges=sort(edge2keep.current),
               notincluded = sort(setdiff(internal.edge,edge2keep.current)),
