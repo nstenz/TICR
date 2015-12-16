@@ -13,11 +13,21 @@
 
 test.tree.preparation <- function(cf, guidetree){
  # change all external edges of the guide tree to 0
- external.edge <- which(guidetree$edge[,2]<=length(guidetree$tip.label))
- internal.edge <- which(guidetree$edge[,2]> length(guidetree$tip.label))
+ Ntip <- length(guidetree$tip.label)
+ external.edge = which(guidetree$edge[,2] <= Ntip)
+ # if the root leads to one leaf on one side and one clade on the other, then
+ # the edge from the root to this clade is also 'external': no quartets map to it.
+ root.edges <- which(guidetree$edge[,1] == Ntip+1) # the root has index Ntip+1 by convention in ape.
+ if (length(root.edges)==2){
+  if (guidetree$edge[root.edges[1],2] <= Ntip) # the root leads to a leaf
+   external.edge <- c(external.edge, root.edges[2]) # the other edge should be considered external
+  if (guidetree$edge[root.edges[2],2] <= Ntip) # the root leads to a leaf
+   external.edge <- c(external.edge, root.edges[1]) # the other edge should be considered external
+ }
+ internal.edge = (1:nrow(guidetree$edge))[-external.edge]
+
  guidetree$edge.length[external.edge]<-0
  # this is modifying guidetree in the current environment only, not in gloval env.
- Ntip <- length(guidetree$tip.label)
  tax2id <- 1:Ntip; names(tax2id)=guidetree$tip.label
  M = nrow(cf) # number of quartets with data
  dat.names <- as.matrix(cf[,1:4]) # -> taxon names as characters, not factors
@@ -156,6 +166,8 @@ test.one.species.tree <- function(cf,guidetree,prep,edge.keep,plot=TRUE,add2shap
 
   # change external edge lengths to 0. Useful for plot, and to check long edges.
   guidetree$edge.length[guidetree$edge[,2]<=length(guidetree$tip.label)] <- 0
+  # if the root leads to 1 leaf and 1 clade, the internal edge that should be considered
+  # external is not changed: length kept as is. But not a problem for the test.
 
   M = nrow(cf) # number of quartets with data
   cf.obs = as.matrix(cf[,5:7])
@@ -172,13 +184,6 @@ test.one.species.tree <- function(cf,guidetree,prep,edge.keep,plot=TRUE,add2shap
   tab0 = c(.01,.04,.05,.90)                # expected proportions of p-values
   names(tab0)=c(".01",".05",".10","large") # tab0*M:  .01    .05     .10   large
                                            #       274.05 1096.2 1370.25 24664.5
-  if (plot){
-    if (length(edge.keep)>0){
-      layout(matrix(1:4,2,2,byrow=T))
-      plot.species.tree(guidetree,edge.keep)
-    } else
-      layout(matrix(c(1,1:3),2,2,byrow=T))
-  }
 
   #----------- get expected concordance factors -----------------------#
   if (length(edge.keep)==0) { tk = numeric(M) } else {
@@ -193,18 +198,6 @@ test.one.species.tree <- function(cf,guidetree,prep,edge.keep,plot=TRUE,add2shap
   cf.exp[1:M + (prep$dominant-1)*M] = 1-exp(-tk)*2/3
 
   #--------------------- estimate alpha -------------------------#
-  if (plot){
-    if (length(edge.keep)>0){
-      plot(cf.exp,cf.obs,ylab="Observed CFs",xlab="Expected CFs");
-      abline(a=0,b=1,col="red")
-    } else {
-      hist(cf.obs,xlab="Observed CFs", breaks=50, col="tan",xlim=0:1, main="",
-           ylab="Number of quartets")
-      mtext("Expected CFs=1/3",side=3,at=1/3,adj=0, line=0.1)
-      abline(v=1/3)
-    }
-  }
-
   logCFtilde = sum(log(cf.obs)*cf.exp) # true mean would have this /M
   tmp = rle(sort(tk))
   tk.unique = tmp$values
@@ -235,14 +228,28 @@ test.one.species.tree <- function(cf,guidetree,prep,edge.keep,plot=TRUE,add2shap
      sum(nk*lgamma(alpha*pk.domin+b)) +
    2*sum(nk*lgamma(alpha*pk.minor+b)) + sum((1-b)*logCFsum.bytk)
   }
-  res=optimize(f1,interval=c(0,10^5))
+  alpha.lower.bound <- 0
+  #if (length(edge.keep)==0 & add2shape.alpha == "adaptive"){ alpha.lower.bound <- 3 }
+  res=optimize(f1,interval=c(alpha.lower.bound,10^5))
   alpha=res$minimum;
   # minus.pll = res$objective + logCFsum # for previous def of f1 when add2shape.alpha=0
   minus.pll = res$objective       # - pseudo-log-likelihood
-  # cat("estimated alpha:",alpha,", -pseudo log-lik:",minus.pll,"\n")
-  # xx = seq(1,4*alpha,by=1); yy=sapply(xx,f1)
-  # plot(xx,yy,type="l"); points(alpha,res$objective,col="red",pch=16)
-
+  if (plot){
+    if (length(edge.keep)>0){
+      layout(matrix(c(1:5,5),2,3,byrow=T))
+      plot(cf.exp,cf.obs,ylab="Observed CFs",xlab="Expected CFs");
+      abline(a=0,b=1,col="red")
+    } else {
+      layout(matrix(c(1:4),2,2,byrow=T))
+      hist(cf.obs,xlab="Observed CFs", breaks=50, col="tan",xlim=0:1, main="",
+           ylab="Number of quartets")
+      mtext("Expected CFs=1/3",side=3,at=1/3,adj=0, line=0.1)
+      abline(v=1/3)
+    }
+    aa = alpha.lower.bound + seq(.01,3*(alpha-alpha.lower.bound),length.out=500)
+    plot(aa,sapply(aa,f1),type="l",xlab="alpha",ylab="neg. pseudo log-likelihood");
+    points(alpha,minus.pll,col="red",pch=16)
+  }
   #--------------------- get a p-value for each quartet -------------------#
   p.exp = pmax(cf.exp[,1], cf.exp[,2],cf.exp[,3])
   ind.tree = which(tk>0)
@@ -277,6 +284,8 @@ test.one.species.tree <- function(cf,guidetree,prep,edge.keep,plot=TRUE,add2shap
                     "CF of dominant quartet\n(jittered)"),
          ylab="p-value of 4-taxon set")
     mtext("(zooming to p-values<0.01 only)",side=3,line=0.01,cex=0.7)
+    if (length(edge.keep) > 0)
+      plot.species.tree(guidetree,edge.keep)
   }
 
   pcat = cut(pval, breaks=c(0,.01,.05,.10,1),
@@ -325,11 +334,18 @@ stepwise.test.tree = function(cf, guidetree, search="heuristic", method="PLL", k
  maxBranchLength <- 30 # arbitrary, to replace infinite coalescent units
 
  # change all external edges of the guide tree to 0
- external.edge = which(guidetree$edge[,2]<=length(guidetree$tip.label))
- internal.edge = which(guidetree$edge[,2]> length(guidetree$tip.label))
+ Ntip <- length(guidetree$tip.label)
+ external.edge = which(guidetree$edge[,2] <= Ntip)
  guidetree$edge.length[external.edge] <- 0
  # modifying guidetree in the current environment only, not in gloval env.
- Ntip = length(guidetree$tip.label)
+ root.edges <- which(guidetree$edge[,1] == Ntip+1)
+ if (length(root.edges)==2){
+  if (guidetree$edge[root.edges[1],2] <= Ntip)
+   external.edge <- c(external.edge, root.edges[2])
+  if (guidetree$edge[root.edges[2],2] <= Ntip)
+   external.edge <- c(external.edge, root.edges[1])
+ }
+ internal.edge = (1:nrow(guidetree$edge))[-external.edge]
  tax2id = 1:Ntip; names(tax2id)=guidetree$tip.label
  M = nrow(cf) # 27405: number of quartets with data
  cf.obs = as.matrix(cf[,5:7])
@@ -471,12 +487,10 @@ stepwise.test.tree = function(cf, guidetree, search="heuristic", method="PLL", k
      sum(nk*lgamma(alpha*pk.domin+b)) +
    2*sum(nk*lgamma(alpha*pk.minor+b)) + sum((1-b)*logCFsum.bytk)
   }
+  #if (length(edge.keep)==0 & add2shape.alpha == "adaptive"){ alpha.lower.bound <- 3 }
   res=optimize(f1,interval=c(0,10^5))
   alpha=res$minimum
   minus.pll = res$objective # - pseudo-log-likelihood at best alpha
-  # cat("estimated alpha:",alpha,", -pseudo log-lik:",minus.pll,"\n")
-  # xx = seq(1,4*alpha,by=1); yy=sapply(xx,f1)
-  # plot(xx,yy,type="l"); points(alpha,res$objective,col="red",pch=16)
   #--------------------- get a p-value for each quartet -------------------#
   p.exp = pmax(cf.exp[,1], cf.exp[,2],cf.exp[,3])
   ind.tree = which(tk>0)  
@@ -514,18 +528,20 @@ stepwise.test.tree = function(cf, guidetree, search="heuristic", method="PLL", k
   }
   if (plot){
    if (length(edge.keep)>0) {
-    layout(matrix(1:4,2,2,byrow=T))
-    plot.species.tree(guidetree,edge.keep)
+    layout(matrix(c(1:5,5),2,3,byrow=T))
     plot(cf.exp,cf.obs,ylab="Observed CFs",xlab="Expected CFs");
     abline(a=0,b=1,col="red")
     cf2plot <- cf.exp[1:M + (dominant-1)*M]
    } else {
-    layout(matrix(c(1,1:3),2,2,byrow=T))
+    layout(matrix(1:4,2,2,byrow=T))
     hist(cf.obs,xlab="Observed CFs",breaks=50,col="tan",xlim=0:1,main="",ylab="Number of quartets")
     mtext("Expected CFs=1/3",side=3,at=1/3,adj=0, line=0.1)
     abline(v=1/3)
     cf2plot <- cf.obs[1:M + (dominant-1)*M]
    }
+   aa = seq(.01,3*alpha,length.out=500)
+   plot(aa,sapply(aa,f1),type="l",xlab="alpha",ylab="neg. pseudo log-likelihood");
+   points(alpha,minus.pll,col="red",pch=16)
    hist(pval, breaks=100, xlim=c(0,.5),col="tan", main="",ylab="Number of 4-taxon sets",
        xlab="p-value (showing those < 0.5 only)")
    plot(pval~jitter(cf2plot,amount=0.005),cex=0.5,ylim=c(0,0.01),
@@ -533,6 +549,8 @@ stepwise.test.tree = function(cf, guidetree, search="heuristic", method="PLL", k
                    "CF of dominant quartet\n(jittered)"),
         ylab="p-value of 4-taxon set")
    mtext("(zooming to p-values<0.01 only)",side=3,line=0.01,cex=0.7)
+   if (length(edge.keep)>0)
+     plot.species.tree(guidetree,edge.keep)
   }
   return(tmp)
  }
@@ -580,9 +598,10 @@ stepwise.test.tree = function(cf, guidetree, search="heuristic", method="PLL", k
   res2 = score.edge(which(bestRes1$pval<.01))
   if (method=="PLL"){ bestCriterion = bestRes1$minus.pll } # criterion
   iter = 0
-  {cat("iter=",iter,"\n\tNedge=",Nedge,"\n\tedges=",edge2keep.current)
+  cat("iter=",iter,"\n\tNedge=",Nedge,"\n\tedges=",edge2keep.current)
   cat("\n\talpha=",bestRes1$alpha,"\n\t-PLL =",bestRes1$minus.pll)
-  cat("\n\tX2   =",bestRes1$X2,"\n\tcrit.=",bestCriterion,"\n")}
+  cat("\n\tX2   =",bestRes1$X2,"\n\tcrit.=",bestCriterion,"\n")
+  flush.console()
   while (iter<maxiter){
    iter = iter+1
    bestAction = "stop"
