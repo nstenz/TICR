@@ -1030,13 +1030,14 @@ sub parse_mbsum_taxa {
 	while (my $line = <$mbsum_file>) {
 		$in_translate_block++ if ($line =~ /translate/);
 
-		if ($in_translate_block && $line =~ /\d+ (\S+)[,;]/) {
+		if ($in_translate_block == 1 && $line =~ /\d+ (\S+)[,;]/) {
 			push(@taxa, $1);
 		}
-
-		undef($in_translate_block) if ($in_translate_block && $line =~ /\d+ (\S+);/);
 	}
 	close($mbsum_file);
+
+	# Check if there were multiple translate blocks in the file which is indicative of an error with the creation of the file
+	die "Something is amiss with '$mbsum_file_name', multiple translate blocks ($in_translate_block) were detected when there should only be one.\n" if ($in_translate_block > 1);
 
 	# Check that we actually parsed something, otherwise input is improperly formatted/not mbsum output
 	die "No taxa parsed for file '$mbsum_file_name', does '$archive' actually contain mbsum output?.\n" if (!@taxa);
