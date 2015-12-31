@@ -1,5 +1,14 @@
 # TICR
 These scripts can be utilized to perform highly parallelized concordance analyses on any given alignment, with a particular focus on very large datasets which may include dozens of taxa and may span entire chromosomes or genomes.
+If you use the method and for details, please cite
+* Stenz et al (2015).
+  Exploring tree-like and non-tree-like patterns using genome sequences:
+  An example using the inbreeding plant species *Arabidopsis thaliana* (L.) Heynh.
+  Systematic Biology, 64(5):809-823.
+* links: [abstract](http://sysbio.oxfordjournals.org/cgi/content/abstract/syv039?ijkey=PGiptM62iGhH0zu&keytype=ref)
+  and
+  [pdf](http://sysbio.oxfordjournals.org/cgi/reprint/syv039?ijkey=PGiptM62iGhH0zu&keytype=ref)
+
 Jump to: 
 * [Dependencies](#dep)
 * [Important notes](#notes)

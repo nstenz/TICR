@@ -29,7 +29,7 @@ internal.edges = which(guidetree$edge[,2] > Ntaxa)
 #---------- Test of Panmixia ----------------------------------------#
 
 panmixia <- test.one.species.tree(dat,guidetree,prelim,edge.keep=NULL) # 0.10 seconds
-panmixia[1:4] # gives alpha=19.86, negative log pseudo-likelihood=-51737.76,
+panmixia[1:5] # gives alpha=19.86, negative log pseudo-likelihood=-51737.76,
               # X2=685.498 and p-value=3e-148 from chi-square test of panmixia
 panmixia$outlier.table # table of number of quartets with low / large p-values
 #             .01    .05     .10   large
@@ -43,7 +43,7 @@ panmixia$outlier.table # table of number of quartets with low / large p-values
 #---------- Test of the fully-resolved Tree -------------------------#
 
 fulltree <- test.one.species.tree(dat,guidetree,prelim,edge.keep=internal.edges) # 0.186 seconds
-fulltree[1:4] # alpha=165.9, negative log pseudo-likelihood=-109566.8,
+fulltree[1:5] # alpha=165.9, negative log pseudo-likelihood=-109566.8,
               # X2=149.9901 and p-value=2.6e-32 from chi-square test of binary tree
 fulltree$outlier.table
 #             .01    .05     .10   large
@@ -56,7 +56,7 @@ fulltree$outlier.table
 resF <- stepwise.test.tree(dat,guidetree,search="both", kbest=15, 
                            maxiter=100, startT="fulltree") # 52.9 seconds
 # At each step, the best choice was to removed an edge.
-resF[1:7]
+resF[1:8]
 # Nedge=21 edges kept:
 # 1  2  4  6  7  8 11 14 20 21 23 24 31 34 35 36 38 39 44 47 53
 # 6 edges not included: 3  5 19 22 37 48
@@ -73,7 +73,7 @@ resP <- stepwise.test.tree(dat,guidetree,search="both", kbest=15,
                            maxiter=100, startT="panmixia") # 96.2 seconds
 # At each step, the best choice was to add an edge.
 # Same partial tree with same 21 resolved edges, as when starting the search from the full tree:
-resP[1:7]
+resP[1:8]
  
 # to see and re-analyze the partially-resolved tree without doing the search all over:
 edges2keep <- c(1,2,4,6,7,8,11,14,20,21,23,24,31,34,35,36,38,39,44,47,53)
@@ -82,7 +82,7 @@ partialTree <- test.one.species.tree(dat,guidetree,prelim,edge.keep=edges2keep)
 # The last plot shows the partial tree:
 # with edges collapsed if they are not kept in the partial tree.
 # Edges of length >2 coalescent units are labeled with their edge length (if kept).
-partialTree[1:4]
+partialTree[1:5]
 partialTree$outlier.table
 
 #-------- Identify taxa most responsible for extra outlier quartets -----#
