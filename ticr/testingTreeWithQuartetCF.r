@@ -140,13 +140,14 @@ plot.species.tree <- function(guidetree,edge.keep){
   #add.scale.bar(col="red",lcol="red")
 }
 
-test.one.species.tree <- function(cf,guidetree,prep,edge.keep,plot=TRUE,add2shape.outlier="adaptive",
-                                  add2shape.alpha="adaptive"){
-
+test.one.species.tree <- function(cf,guidetree,prep,edge.keep,plot=TRUE,shape.correction = TRUE){
   # prep should be the result of this, which takes a little while
   # so it's best to do it once and re-use it multiple times later:
   # prep = test.tree.preparation(cf,guidetree)
 
+  if (shape.correction)
+    add2shape.outlier <- add2shape.alpha <-"adaptive" else
+    add2shape.outlier <- add2shape.alpha <- 0
   # add2shape: to make sure all shapes are >=1 for the Dirichlet,
   #            either to get p-values (.outlier) or to estimate alpha (.alpha).
   #            avoids Dirichlet density going to infinity at 0 or 1.
@@ -293,8 +294,16 @@ test.one.species.tree <- function(cf,guidetree,prep,edge.keep,plot=TRUE,add2shap
                    labels=c(".01",".05",".10","large"),include.lowest=T)
   tab = table(pcat)
   res = chisq.test(tab, p=tab0) # p-value from X-squared and df=3
-  # return tk as well? can be obtained fro cf.exp
+  if (res$p.value<0.05) {
+    chisq.message <- "There is an excess of outlier quartets (with outlier p-value<=0.01).\nThis pattern could indicate an inadequate population tree or reticulate evolution.\n"
+    if (tab[".01"] < M*tab0[".01"])
+      chisq.message <- "The chi-square test is significant at level .05,\nbut there is a deficit of outlier quartets (with outlier p-value<=0.01).\nThis pattern does not have a simple evolutionary explanation.\n"
+  } else {
+    chisq.message <- "The chi-square test is not significant:\nthe population tree fits the quartet concordance factors adequately\n"}
+  cat(chisq.message)
+  # return tk as well? can be obtained from cf.exp
   return(list(alpha=alpha,minus.pll=minus.pll,X2=as.numeric(res$statistic),chisq.pval=res$p.value,
+              chisq.conclusion=chisq.message,
               outlier.table=rbind(observed=tab,expected=tab0*M),
               outlier.pvalues=pval,cf.exp=cf.exp))
 }
@@ -308,14 +317,16 @@ test.one.species.tree <- function(cf,guidetree,prep,edge.keep,plot=TRUE,add2shap
 #--------------------------------------------------------#
 
 stepwise.test.tree = function(cf, guidetree, search="heuristic", method="PLL", kbest=5,
-                              maxiter=100, startT="panmixia",add2shape.outlier="adaptive",
-                              add2shape.alpha="adaptive"){
+                              maxiter=100, startT="panmixia",shape.correction=TRUE){
 # search: "heuristic" (method etc. ignored) or
 #         "both" directions (method etc. are used)
 # kbest: lower value for faster, less thorough search.
 # startT: starting partial tree for stepwise search. One of:
 #         "panmixia", "fulltree", or numeric vector of edge numbers.
 
+ if (shape.correction)
+   add2shape.outlier <- add2shape.alpha <-"adaptive" else
+   add2shape.outlier <- add2shape.alpha <- 0
  # add2shape: to make sure all shapes are >=1 for the Dirichlet,
  #            either to get p-values (.outlier) or to estimate alpha (.alpha).
  #            avoids Dirichlet density going to infinity at 0 or 1.
@@ -662,11 +673,19 @@ stepwise.test.tree = function(cf, guidetree, search="heuristic", method="PLL", k
   }
 
   bestRes1 <- test.species.tree(edge2keep.current, plot=T, fullOutput=T)
+  if (bestRes1$chisq.pval<0.05) {
+    chisq.message <- "There is an excess of outlier quartets (with outlier p-value<=0.01).\nThis pattern could indicate an inadequate population tree or reticulate evolution.\n"
+    if (bestRes1$outlier.table["observed",".01"] < bestRes1$outlier.table["expected",".01"])
+      chisq.message <- "The chi-square test is significant at level .05,\nbut there is a deficit of outlier quartets (with outlier p-value<=0.01).\nThis pattern does not have a simple evolutionary explanation.\n"
+  } else {
+    chisq.message <- "The chi-square test is not significant:\nthe population tree fits the quartet concordance factors adequately\n"}
+  cat(chisq.message)
   return(list(Nedge=Nedge,edges=sort(edge2keep.current),
               notincluded = sort(setdiff(internal.edge,edge2keep.current)),
               alpha=bestRes1$alpha,
               negPseudoLoglik=bestRes1$minus.pll, X2=bestRes1$X2,
-              chisq.pval=bestRes1$chisq.pval, outlier.table=bestRes1$outlier.table,
+              chisq.pval=bestRes1$chisq.pval, chisq.conclusion=chisq.message,
+              outlier.table=bestRes1$outlier.table,
               outlier.pvalues=bestRes1$pval, cf.exp=bestRes1$cf.exp))
  }
 }
