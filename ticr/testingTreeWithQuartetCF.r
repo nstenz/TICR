@@ -126,7 +126,7 @@ test.tree.preparation <- function(cf, guidetree){
              dominant     = dominant))
 }
 
-plot.species.tree <- function(guidetree,edge.keep){
+.plot.species.tree <- function(guidetree,edge.keep){
   sp.tree = guidetree # best if external edge lengths are 0 already
   if (length(edge.keep)==0){
    warning("Complete panmixia: the tree looks like a single tip. Won't plot this.")
@@ -287,7 +287,7 @@ test.one.species.tree <- function(cf,guidetree,prep,edge.keep,plot=TRUE,shape.co
          ylab="p-value of 4-taxon set")
     mtext("(zooming to p-values<0.01 only)",side=3,line=0.01,cex=0.7)
     if (length(edge.keep) > 0)
-      plot.species.tree(guidetree,edge.keep)
+      .plot.species.tree(guidetree,edge.keep)
   }
 
   pcat = cut(pval, breaks=c(0,.01,.05,.10,1),
@@ -316,7 +316,7 @@ test.one.species.tree <- function(cf,guidetree,prep,edge.keep,plot=TRUE,shape.co
 #      and garbage-collecting the very large CF data     #
 #--------------------------------------------------------#
 
-stepwise.test.tree = function(cf, guidetree, search="heuristic", method="PLL", kbest=5,
+stepwise.test.tree = function(cf, guidetree, search="both", method="PLL", kbest=5,
                               maxiter=100, startT="panmixia",shape.correction=TRUE){
 # search: "heuristic" (method etc. ignored) or
 #         "both" directions (method etc. are used)
@@ -561,7 +561,7 @@ stepwise.test.tree = function(cf, guidetree, search="heuristic", method="PLL", k
         ylab="p-value of 4-taxon set")
    mtext("(zooming to p-values<0.01 only)",side=3,line=0.01,cex=0.7)
    if (length(edge.keep)>0)
-     plot.species.tree(guidetree,edge.keep)
+     .plot.species.tree(guidetree,edge.keep)
   }
   return(tmp)
  }

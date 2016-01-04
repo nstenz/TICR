@@ -15,12 +15,12 @@ source("testingTreeWithQuartetCF.r")
 # First concordance factors: one line per quartet, 3 CFs per line. 
 # columns 1-4 should have these headers:  taxon1 taxon2 taxon3 taxon4
 # columns 5-7 should contain the CFs of quartets: 12|34, 13|24 and 14|23.
-dat = read.csv("quartetCF.csv")
+quartetCF = read.csv("quartetCF.csv")
 # read the guide tree:
 guidetree = read.tree("tree.tre")
 
 # prelimary calculations: may take a little while, like 19 seconds on the test example
-prelim = test.tree.preparation(dat,guidetree)
+prelim = test.tree.preparation(quartetCF,guidetree)
 Ntaxa = length(guidetree$tip.label)
 # indices of internal edges: those that might be collapsed in a partially resolved tree
 internal.edges = which(guidetree$edge[,2] > Ntaxa)
@@ -28,9 +28,9 @@ internal.edges = which(guidetree$edge[,2] > Ntaxa)
 
 #---------- Test of Panmixia ----------------------------------------#
 
-panmixia <- test.one.species.tree(dat,guidetree,prelim,edge.keep=NULL) # 0.10 seconds
+panmixia <- test.one.species.tree(quartetCF,guidetree,prelim,edge.keep=NULL) # 0.10 seconds
 panmixia[1:5] # gives alpha=19.86, negative log pseudo-likelihood=-51737.76,
-              # X2=685.498 and p-value=3e-148 from chi-square test of panmixia
+              # X2=685.498 and p-value=2.9e-148 from chi-square test of panmixia
 panmixia$outlier.table # table of number of quartets with low / large p-values
 #             .01    .05     .10   large
 # observed 424.00  401.0  956.00 25624.0
@@ -42,7 +42,7 @@ panmixia$outlier.table # table of number of quartets with low / large p-values
 
 #---------- Test of the fully-resolved Tree -------------------------#
 
-fulltree <- test.one.species.tree(dat,guidetree,prelim,edge.keep=internal.edges) # 0.186 seconds
+fulltree <- test.one.species.tree(quartetCF,guidetree,prelim,edge.keep=internal.edges) # 0.186 seconds
 fulltree[1:5] # alpha=165.9, negative log pseudo-likelihood=-109566.8,
               # X2=149.9901 and p-value=2.6e-32 from chi-square test of binary tree
 fulltree$outlier.table
@@ -53,7 +53,7 @@ fulltree$outlier.table
 #---------- Search for partially-resolved Tree ----------------------#
 
 # forward + backward search starting from the full tree:
-resF <- stepwise.test.tree(dat,guidetree,search="both", kbest=15, 
+resF <- stepwise.test.tree(quartetCF,guidetree,search="both", kbest=15,
                            maxiter=100, startT="fulltree") # 52.9 seconds
 # At each step, the best choice was to removed an edge.
 resF[1:8]
@@ -69,7 +69,7 @@ resF$outlier.table
 # expected 274.05 1096.2 1370.25 24664.5
 
 # To start the search from panmixia:
-resP <- stepwise.test.tree(dat,guidetree,search="both", kbest=15,
+resP <- stepwise.test.tree(quartetCF,guidetree,search="both", kbest=15,
                            maxiter=100, startT="panmixia") # 96.2 seconds
 # At each step, the best choice was to add an edge.
 # Same partial tree with same 21 resolved edges, as when starting the search from the full tree:
@@ -78,7 +78,7 @@ resP[1:8]
 # to see and re-analyze the partially-resolved tree without doing the search all over:
 edges2keep <- c(1,2,4,6,7,8,11,14,20,21,23,24,31,34,35,36,38,39,44,47,53)
 # or just: edges2keep <- resF$edges
-partialTree <- test.one.species.tree(dat,guidetree,prelim,edge.keep=edges2keep)
+partialTree <- test.one.species.tree(quartetCF,guidetree,prelim,edge.keep=edges2keep)
 # The last plot shows the partial tree:
 # with edges collapsed if they are not kept in the partial tree.
 # Edges of length >2 coalescent units are labeled with their edge length (if kept).
@@ -88,8 +88,8 @@ partialTree$outlier.table
 #-------- Identify taxa most responsible for extra outlier quartets -----#
 
 outlier.4taxa <- which(partialTree$outlier.pvalues < 0.01)
-length(outlier.4taxa) # 483 40-taxon sets with outlier p-value below 0.01
-q01 = as.matrix(dat[outlier.4taxa,1:4])
+length(outlier.4taxa) # 483 4-taxon sets with outlier p-value below 0.01
+q01 = as.matrix(quartetCF[outlier.4taxa,1:4])
 sort(table(as.vector(q01)),decreasing=T)
 # Cnt_1 Vind_1  Hau_0 Ragl_1  Mnz_0   Nw_0 Qar_8a   Co_1  A_Lyr Bsch_0   Jm_0 
 #   239    239    126    123    120     92     74     66     65     55     53 
@@ -102,4 +102,4 @@ sort(table(as.vector(q01)),decreasing=T)
 sum(apply(q01,1,function(x){"Cnt_1" %in% x | "Vind_1" %in% x}))
 # 266 outlier 4-taxon sets have either Cnt_1 or Vind_1
 sum(apply(q01,1,function(x){"Cnt_1" %in% x & "Vind_1" %in% x}))
-# 212 outlier 4-taxon sets have both Cnt_1 or Vind_1
+# 212 outlier 4-taxon sets have both Cnt_1 and Vind_1
