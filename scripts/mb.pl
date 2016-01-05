@@ -205,15 +205,11 @@ chomp(my @genes = `tar xvf $init_dir/$archive -C $gene_dir`);
 
 chdir($gene_dir);
 
-#@genes = glob($archive_root_no_ext."*.nex");
-#@genes = sort { (local $a = $a) =~ s/.*-(\d+)-\d+\..*/$1/; 
-#				(local $b = $b) =~ s/.*-(\d+)-\d+\..*/$1/; 
-#				$a <=> $b } @genes;
-
 # Remove completed genes
 if (%complete_genes) {
 	foreach my $index (reverse(0 .. $#genes)) {
 		if (exists($complete_genes{$genes[$index]})) {
+			unlink($genes[$index]);
 			splice(@genes, $index, 1);
 		}
 	}
@@ -440,37 +436,36 @@ foreach my $pid (@pids) {
 print "\n  All connections closed.\n";
 print "Total execution time: ", sec2human(time() - $time), ".\n\n";
 
-#print "removing $initial_directory/$project_name/$gene_dir\n";
-rmdir("$initial_directory/$project_name/$gene_dir");
+# Create list of tarballs that should be present
+my @tarballs = map { local $_ = $_; $_ .= ".tar.gz"; $_ } @genes;
 
-## Create list of tarballs that should be present
-#my @tarballs = map { local $_ = $_; $_ .= ".tar.gz"; $_ } @genes;
-#
-#print "Compressing and archiving results... ";
-#
-## Check if output from a previous run exists
-#if (-e "../".$mb_archive) {
-#
-#	# Go to project directory
-#	chdir("..");
-#
-#	# Unarchive old archive and add its contents to @tarballs
-#	chomp(my @complete_genes = `tar xvf $mb_archive -C $gene_dir`);
-#	push(@tarballs, @complete_genes);
-#
-#	# Reenter gene directory
-#	chdir($gene_dir);
-#}
-#
-## Archive the genes into a single tarball and move it back into the project directory
-#system("tar", "czf", $mb_archive, @tarballs, "--remove-files");
-#system("mv", $mb_archive, "..");
-#
-## Go back to project directory
-#chdir("..");
-#rmdir($gene_dir);
-#
-#print "done.\n\n";
+print "Archiving results... ";
+
+# Check if output from a previous run exists
+if (-e "../".$mb_archive) {
+
+	# Go to project directory
+	chdir("..");
+
+	# Unarchive old archive and add contents to @tarballs
+	chomp(my @complete_genes = `tar xvf $mb_archive -C $gene_dir 2>&1`);
+	@complete_genes = map { s/x //; $_ } @complete_genes if ($os_name eq "darwin");
+	push(@tarballs, @complete_genes);
+
+	# Reenter gene directory
+	chdir($gene_dir);
+}
+
+# Archive the genes into a single tarball and move it back into the project directory
+system("tar", "cf", $mb_archive, @tarballs);
+unlink(@tarballs);
+system("mv", $mb_archive, "..");
+
+# Go back to project directory
+chdir("..");
+rmdir($gene_dir);
+
+print "done.\n\n";
 
 sub client {
 	my ($opt_name, $server_ip) = @_;	
@@ -995,7 +990,6 @@ sub sec2human {
 	}
 	if ($secs) {
 		$time .= ($secs != 1) ? "$secs seconds " : "$secs second ";
-		print "MEOMWEOMWEOm\n";
 	}
 	else {
 		# Remove comma
