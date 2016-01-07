@@ -1454,7 +1454,8 @@ sub parallelize {
 
 		# Spawn a new process if running less than maximum
 		if ($running_forks < $max_forks) {
-			my $pid = fork();
+			my $pid;
+			until (defined($pid)) { $pid = fork(); usleep(30000); }
 			if ($pid == 0) {
 				$method_args{'NUM'} = $i;
 				$method_args{'TOTAL'} = $total;
@@ -1506,7 +1507,8 @@ sub parallelize_with_return {
 		# Spawn a new process if running less than maximum
 		if ($running_forks < $max_forks) {
 			my $pipe = new IO::Pipe;
-			my $pid = fork();
+			my $pid;
+			until (defined($pid)) { $pid = fork(); usleep(30000); }
 
 			if ($pid == 0) {
 				my $TO_PARENT = $pipe->writer();
@@ -1640,7 +1642,6 @@ sub sec2human {
 	}
 	if ($secs) {
 		$time .= ($secs != 1) ? "$secs seconds " : "$secs second ";
-		print "MEOMWEOMWEOm\n";
 	}
 	else {
 		# Remove comma
