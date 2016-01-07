@@ -372,6 +372,7 @@ if (-e $mbsum_archive && $input_is_dir && !$input_is_mbsum) {
 
 $should_summarize = 0 if ($input_is_mbsum);
 
+# Summarize MrBayes output if needed
 if ($should_summarize) {
 	# Run mbsum on each gene
 	print "Summarizing MrBayes output for ".scalar(@genes)." genes.\n";
@@ -381,7 +382,9 @@ if ($should_summarize) {
 
 		# Wait until a CPU is available
 		until(okay_to_run(\@pids)) {};
-		my $pid = fork();
+
+		my $pid;
+		until (defined($pid)) { $pid = fork(); usleep(30000); }
 
 		# The child fork
 		if ($pid == 0) {
@@ -781,7 +784,8 @@ sub client {
 sub dump_quartets {
 	my $quartets = shift;
 
-	my $pid = fork();
+	my $pid;
+	until (defined($pid)) { $pid = fork(); usleep(30000); }
 	if ($pid == 0) {
 
 		my @completed_quartets = keys %{$quartets};
@@ -1273,7 +1277,6 @@ sub sec2human {
 	}
 	if ($secs) {
 		$time .= ($secs != 1) ? "$secs seconds " : "$secs second ";
-		print "MEOMWEOMWEOm\n";
 	}
 	else {
 		# Remove comma
@@ -1381,7 +1384,7 @@ sub combine {
 sub check_bucky_version {
 	my $bucky = shift;
 
-	print "Checking for BUCKy version >= 1.4.4...\n";
+	print "\nChecking for BUCKy version >= 1.4.4...\n";
 
 	# Run BUCKy with --version and extract version info
 	chomp(my @version_info = grep { /BUCKy version/ } `bucky --version`);
