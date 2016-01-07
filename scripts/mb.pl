@@ -305,6 +305,9 @@ foreach my $machine (@machines) {
 
 my $select = IO::Select->new($sock);
 
+# Don't create zombies
+$SIG{CHLD} = 'IGNORE';
+
 # Stores which job is next in queue 
 my $job_number = 0;
 
@@ -365,7 +368,9 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 				else {
 
 					# Perform appending of new gene to tarball in a fork as this can take some time
-					my $pid = fork();
+					my $pid;
+					until (defined($pid)) { $pid = fork(); usleep(30000); }
+
 					if ($pid == 0) {
 
 						# Obtain a file lock on archive so another process doesn't simultaneously try to add to it
@@ -374,6 +379,7 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 						
 						# Add completed gene
 						system("tar", "rf", "../$mb_archive", $completed_gene);
+						unlink($completed_gene);
 
 						# Release lock
 						flock($mb_archive_file, LOCK_UN) || die "Could not unlock '$mb_archive_file': $!.\n";
@@ -397,8 +403,6 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 					# Check whether the client is remote or local, send it needed files if remote
 					if ($client_ip ne $server_ip) {
 
-						$SIG{CHLD} = 'IGNORE';
-
 						# Fork to perform the file transfer and prevent stalling the server
 						my $pid = fork(); 
 						if ($pid == 0) {
@@ -416,7 +420,7 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 					$job_number++;
 				}
 				else {
-						# Client has asked for a job, but there are none remaining
+					# Client has asked for a job, but there are none remaining
 					print {$client} "HANGUP\n";
 					$select->remove($client);
 					$client->close();
@@ -439,33 +443,9 @@ print "Total execution time: ", sec2human(time() - $time), ".\n\n";
 # Create list of tarballs that should be present
 my @tarballs = map { local $_ = $_; $_ .= ".tar.gz"; $_ } @genes;
 
-print "Archiving results... ";
-
-# Check if output from a previous run exists
-if (-e "../".$mb_archive) {
-
-	# Go to project directory
-	chdir("..");
-
-	# Unarchive old archive and add contents to @tarballs
-	chomp(my @complete_genes = `tar xvf $mb_archive -C $gene_dir 2>&1`);
-	@complete_genes = map { s/x //; $_ } @complete_genes if ($os_name eq "darwin");
-	push(@tarballs, @complete_genes);
-
-	# Reenter gene directory
-	chdir($gene_dir);
-}
-
-# Archive the genes into a single tarball and move it back into the project directory
-system("tar", "cf", $mb_archive, @tarballs);
-unlink(@tarballs);
-system("mv", $mb_archive, "..");
-
-# Go back to project directory
+# Go back to project directory, delete empty gene dir
 chdir("..");
 rmdir($gene_dir);
-
-print "done.\n\n";
 
 sub client {
 	my ($opt_name, $server_ip) = @_;	
