@@ -719,7 +719,7 @@ sub run_mdl {
 
 				# Execute this perl script on the given machine
 				# -tt forces pseudo-terminal allocation and lets us stop remote processes
-				exec("ssh", "-tt", $machine, "perl", "/tmp/$script_name", "--server-ip=$server_ip");
+				exec("ssh", "-tt", $machine, "perl", "/tmp/$script_name", "--server-ip=$server_ip:$port");
 			}
 			else {
 				# Send this script to the machine
@@ -729,7 +729,7 @@ sub run_mdl {
 				system("cp", $paup , "/tmp");
 
 				# Execute this perl script on the given machine
-				exec("perl", "/tmp/$script_name", "--server-ip=127.0.0.1");
+				exec("perl", "/tmp/$script_name", "--server-ip=127.0.0.1:$port");
 			}
 
 			exit(0);
@@ -1315,7 +1315,9 @@ sub write_partition {
 }
 
 sub client {
-	my ($opt_name, $server_ip) = @_;	
+	my ($opt_name, $address) = @_;	
+
+	my ($server_ip, $port) = split(":", $address);
 
 	chdir("/tmp");
 	my $paup = "/tmp/paup";

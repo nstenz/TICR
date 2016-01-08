@@ -480,7 +480,7 @@ foreach my $machine (@machines) {
 
 			# Execute this perl script in client mode on the given machine
 			# -tt forces pseudo-terminal allocation and lets us stop remote processes
-			exec("ssh", "-tt", $machine, "perl", "/tmp/$script_name", $mbsum_archive, "--server-ip=$server_ip");
+			exec("ssh", "-tt", $machine, "perl", "/tmp/$script_name", $mbsum_archive, "--server-ip=$server_ip:$port");
 		}
 		else {
 			# Send this script to the machine
@@ -490,7 +490,7 @@ foreach my $machine (@machines) {
 			system("cp", $bucky, "/tmp");
 
 			# Execute this perl script in client mode
-			exec("perl", "/tmp/$script_name", "$init_dir/$project_name/$mb_sum_dir/$mbsum_archive", "--server-ip=127.0.0.1");
+			exec("perl", "/tmp/$script_name", "$init_dir/$project_name/$mb_sum_dir/$mbsum_archive", "--server-ip=127.0.0.1:$port");
 		}
 
 		exit(0);
@@ -630,7 +630,9 @@ print "Total execution time: ", sec2human(time() - $time), ".\n\n";
 rmdir("$initial_directory/$project_name/$mb_sum_dir");
 
 sub client {
-	my ($opt_name, $server_ip) = @_;	
+	my ($opt_name, $address) = @_;	
+
+	my ($server_ip, $port) = split(":", $address);
 
 	chdir("/tmp");
 	my $bucky = "/tmp/bucky";

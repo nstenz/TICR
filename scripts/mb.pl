@@ -281,7 +281,7 @@ foreach my $machine (@machines) {
 
 			# Execute this perl script on the given machine
 			# -tt forces pseudo-terminal allocation and lets us stop remote processes
-			exec("ssh", "-tt", "$machine", "perl", "/tmp/$script_name", "--server-ip=$server_ip");
+			exec("ssh", "-tt", "$machine", "perl", "/tmp/$script_name", "--server-ip=$server_ip:$port");
 		}
 		else {
 			# Send this script to the machine
@@ -291,7 +291,7 @@ foreach my $machine (@machines) {
 			system("cp", $mb, "/tmp");
 
 			# Execute this perl script on the given machine
-			exec("perl", "/tmp/$script_name", "--server-ip=127.0.0.1");
+			exec("perl", "/tmp/$script_name", "--server-ip=127.0.0.1:$port");
 		}
 
 		exit(0);
@@ -376,7 +376,7 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 						# Obtain a file lock on archive so another process doesn't simultaneously try to add to it
 						open(my $mb_archive_file, "<", "../$mb_archive");
 						flock($mb_archive_file, LOCK_EX) || die "Could not lock '$mb_archive_file': $!.\n";
-						
+
 						# Add completed gene
 						system("tar", "rf", "../$mb_archive", $completed_gene);
 						unlink($completed_gene);
@@ -440,15 +440,14 @@ foreach my $pid (@pids) {
 print "\n  All connections closed.\n";
 print "Total execution time: ", sec2human(time() - $time), ".\n\n";
 
-# Create list of tarballs that should be present
-my @tarballs = map { local $_ = $_; $_ .= ".tar.gz"; $_ } @genes;
-
 # Go back to project directory, delete empty gene dir
 chdir("..");
-rmdir($gene_dir);
+until(rmdir($gene_dir)) {};
 
 sub client {
-	my ($opt_name, $server_ip) = @_;	
+	my ($opt_name, $address) = @_;	
+
+	my ($server_ip, $port) = split(":", $address);
 
 	chdir("/tmp");
 	my $mb = "/tmp/mb";
@@ -488,7 +487,6 @@ sub client {
 	my @unlink;
 
 	# Change signal handling so killing the server kills these processes and cleans up
-	#$SIG{CHLD} = 'IGNORE';
 	$SIG{HUP}  = sub { unlink($0, $mb); kill -15, $$; };
 	$SIG{TERM} = sub { unlink(glob($gene."*")) if defined($gene); exit(0)};
 
