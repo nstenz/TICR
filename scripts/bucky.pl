@@ -372,6 +372,7 @@ if (-e $mbsum_archive && $input_is_dir && !$input_is_mbsum) {
 
 $should_summarize = 0 if ($input_is_mbsum);
 
+# Summarize MrBayes output if needed
 if ($should_summarize) {
 	# Run mbsum on each gene
 	print "Summarizing MrBayes output for ".scalar(@genes)." genes.\n";
@@ -381,7 +382,9 @@ if ($should_summarize) {
 
 		# Wait until a CPU is available
 		until(okay_to_run(\@pids)) {};
-		my $pid = fork();
+
+		my $pid;
+		until (defined($pid)) { $pid = fork(); usleep(30000); }
 
 		# The child fork
 		if ($pid == 0) {
@@ -477,7 +480,7 @@ foreach my $machine (@machines) {
 
 			# Execute this perl script in client mode on the given machine
 			# -tt forces pseudo-terminal allocation and lets us stop remote processes
-			exec("ssh", "-tt", $machine, "perl", "/tmp/$script_name", $mbsum_archive, "--server-ip=$server_ip");
+			exec("ssh", "-tt", $machine, "perl", "/tmp/$script_name", $mbsum_archive, "--server-ip=$server_ip:$port");
 		}
 		else {
 			# Send this script to the machine
@@ -487,7 +490,7 @@ foreach my $machine (@machines) {
 			system("cp", $bucky, "/tmp");
 
 			# Execute this perl script in client mode
-			exec("perl", "/tmp/$script_name", "$init_dir/$project_name/$mb_sum_dir/$mbsum_archive", "--server-ip=127.0.0.1");
+			exec("perl", "/tmp/$script_name", "$init_dir/$project_name/$mb_sum_dir/$mbsum_archive", "--server-ip=127.0.0.1:$port");
 		}
 
 		exit(0);
@@ -627,7 +630,9 @@ print "Total execution time: ", sec2human(time() - $time), ".\n\n";
 rmdir("$initial_directory/$project_name/$mb_sum_dir");
 
 sub client {
-	my ($opt_name, $server_ip) = @_;	
+	my ($opt_name, $address) = @_;	
+
+	my ($server_ip, $port) = split(":", $address);
 
 	chdir("/tmp");
 	my $bucky = "/tmp/bucky";
@@ -781,7 +786,8 @@ sub client {
 sub dump_quartets {
 	my $quartets = shift;
 
-	my $pid = fork();
+	my $pid;
+	until (defined($pid)) { $pid = fork(); usleep(30000); }
 	if ($pid == 0) {
 
 		my @completed_quartets = keys %{$quartets};
@@ -1273,7 +1279,6 @@ sub sec2human {
 	}
 	if ($secs) {
 		$time .= ($secs != 1) ? "$secs seconds " : "$secs second ";
-		print "MEOMWEOMWEOm\n";
 	}
 	else {
 		# Remove comma
@@ -1381,7 +1386,7 @@ sub combine {
 sub check_bucky_version {
 	my $bucky = shift;
 
-	print "Checking for BUCKy version >= 1.4.4...\n";
+	print "\nChecking for BUCKy version >= 1.4.4...\n";
 
 	# Run BUCKy with --version and extract version info
 	chomp(my @version_info = grep { /BUCKy version/ } `bucky --version`);
