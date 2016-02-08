@@ -466,7 +466,8 @@ sub paup_cstatus {
 	close(STDOUT);
 
 	# Run PAUP via a pipe to avoid having to create a command file
-	open(my $paup_pipe, "|-", $paup, "-n", "-l", $log_path); 
+	#open(my $paup_pipe, "|-", $paup, "-n", "-l", $log_path); 
+	open(my $paup_pipe, "|-",  $paup, "-L", $log_path, "-n"); 
 	foreach my $command (split("\n", $paup_commands)) {
 		print {$paup_pipe} $command,"\n";
 	}
@@ -1579,7 +1580,7 @@ sub get_free_cpus {
 	}
 	else {
 		# Linux
-		chomp(@percent_free_cpu = `top -bn2d0.05 | grep "Cpu(s)"`);
+		chomp(@percent_free_cpu = `top -b -n2 -d0.05 | grep "Cpu(s)"`);
 	}
 
 	my $percent_free_cpu = pop(@percent_free_cpu);
