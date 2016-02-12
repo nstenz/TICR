@@ -336,7 +336,7 @@ else {
 	foreach my $gene (@genes) {
 
 		# Unzip a single gene
-		chomp(my @mb_files = `tar xvf $genes[0] 2>&1`);
+		chomp(my @mb_files = `tar xvf $gene 2>&1`);
 		@mb_files = map { s/x //; $_ } @mb_files if ($os_name eq "darwin");
 
 		# Locate the log file output by MrBayes
@@ -347,7 +347,7 @@ else {
 				last;
 			}
 		}
-		die "Could not locate log file for '$genes[0]'.\n" if (!defined($log_file_name));
+		die "Could not locate log file for '$gene'.\n" if (!defined($log_file_name));
 
 		# Parse log file for run information
 		my $mb_log = parse_mb_log($log_file_name);
