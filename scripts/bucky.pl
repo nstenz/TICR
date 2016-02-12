@@ -301,9 +301,25 @@ if ($input_is_mbsum) {
 		remove_tree($dir);
 	}
 
-	# Parse one of input genes, assumes same taxa are present in ALL genes
-	@taxa = @{parse_mbsum_taxa($genes[0])};
+	# Parse taxa present in each gene, determine which are shared across all genes
+	my %taxa;
+	foreach my $gene (@genes) {
+		my @taxa = @{parse_mbsum_taxa($gene)};
 
+		# Count taxa present
+		foreach my $taxon (@taxa) {
+			$taxa{$taxon}++;
+		}
+	}
+	
+	# Add taxa present in all genes to analysis
+	foreach my $taxon (keys %taxa) {
+		if ($taxa{$taxon} == scalar(@genes)) {
+			push(@taxa, $taxon);
+		}
+	}
+
+	# Archive genes
 	system("tar", "czf", $mbsum_archive, @genes);
 }
 else {
@@ -315,23 +331,43 @@ else {
 	# Move into MrBayes output directory
 	chdir($mb_out_dir);
 
-	# Unzip a single gene
-	chomp(my @mb_files = `tar xvf $genes[0] 2>&1`);
-	@mb_files = map { s/x //; $_ } @mb_files if ($os_name eq "darwin");
+	# Check that each gene has a log file
+	my %taxa;
+	foreach my $gene (@genes) {
 
-	# Locate the log file output by MrBayes
-	my $log_file_name;
-	foreach my $file (@mb_files) {
-		if ($file =~ /\.log$/) {
-			$log_file_name = $file;
-			last;
+		# Unzip a single gene
+		chomp(my @mb_files = `tar xvf $genes[0] 2>&1`);
+		@mb_files = map { s/x //; $_ } @mb_files if ($os_name eq "darwin");
+
+		# Locate the log file output by MrBayes
+		my $log_file_name;
+		foreach my $file (@mb_files) {
+			if ($file =~ /\.log$/) {
+				$log_file_name = $file;
+				last;
+			}
+		}
+		die "Could not locate log file for '$genes[0]'.\n" if (!defined($log_file_name));
+
+		# Parse log file for run information
+		my $mb_log = parse_mb_log($log_file_name);
+
+		# Check for taxa present
+		my @taxa = @{$mb_log->{TAXA}};
+		foreach my $taxon (@taxa) {
+			$taxa{$taxon}++;
+		}
+
+		# Clean up
+		unlink(@mb_files);
+	}
+
+	# Add taxa present in all genes to analysis
+	foreach my $taxon (keys %taxa) {
+		if ($taxa{$taxon} == scalar(@genes)) {
+			push(@taxa, $taxon);
 		}
 	}
-	die "Could not locate log file for '$genes[0]'.\n" if (!defined($log_file_name));
-
-	# Parse log file for run information
-	my $mb_log = parse_mb_log($log_file_name);
-	@taxa = @{$mb_log->{TAXA}};
 }
 
 # Create list of possible quartets
@@ -350,8 +386,8 @@ if (%complete_quartets) {
 	}
 }
 
-print "Found ".scalar(@taxa)." taxa in this archive, ".scalar(@quartets)." of $original_size ".
-      "possible quartets will be run using output from ".scalar(@genes)." total genes.\n";
+print "Found ".scalar(@taxa)." taxa shared across all genes in this archive, ".scalar(@quartets).
+	  " of $original_size possible quartets will be run using output from ".scalar(@genes)." total genes.\n";
 
 # Go back to working directory
 chdir("..");
@@ -1036,7 +1072,7 @@ sub parse_mbsum_taxa {
 	while (my $line = <$mbsum_file>) {
 		$in_translate_block++ if ($line =~ /translate/);
 
-		if ($in_translate_block == 1 && $line =~ /\d+ (\S+)[,;]/) {
+		if ($in_translate_block == 1 && $line =~ /\d+\s+(\S+)(,|;)?/) {
 			push(@taxa, $1);
 		}
 	}
