@@ -1215,7 +1215,7 @@ sub write_partitions {
 	#system("tar czf $align_root_no_ext.tar.gz @gene_file_names --remove-files");
 	system("tar", "czf", "$align_root_no_ext.tar.gz", @gene_file_names);
 	unlink(@gene_file_names);
-	system("mv $align_root_no_ext.tar.gz ..");
+	system("mv '$align_root_no_ext.tar.gz' ..");
 	print "done.\n";
 
 	# Tarball and zip the mdl partitioning files
@@ -1226,7 +1226,7 @@ sub write_partitions {
 	#system("tar czf $align_root_no_ext-partitions.tar.gz @partitioning_files --remove-files");
 	system("tar", "czf", "$align_root_no_ext-partitions.tar.gz", @partitioning_files);
 	unlink(@partitioning_files);
-	system("mv $align_root_no_ext-partitions.tar.gz ..");
+	system("mv '$align_root_no_ext-partitions.tar.gz' ..");
 	print "done.\n";
 
 	# Tarball and zip the parismony scores for each possible partition
@@ -1237,7 +1237,7 @@ sub write_partitions {
 	#system("tar czf $align_root_no_ext-scores.tar.gz @score_files --remove-files");
 	system("tar", "czf", "$align_root_no_ext-scores.tar.gz", @score_files);
 	unlink(@score_files);
-	system("mv $align_root_no_ext-scores.tar.gz ..");
+	system("mv '$align_root_no_ext-scores.tar.gz' ..");
 	print "done.\n";
 
 	# Remove the now empty directories
