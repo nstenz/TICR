@@ -8,6 +8,8 @@ If you use the method and for details, please cite
 * links: [abstract](http://sysbio.oxfordjournals.org/cgi/content/abstract/syv039?ijkey=PGiptM62iGhH0zu&keytype=ref)
   and
   [pdf](http://sysbio.oxfordjournals.org/cgi/reprint/syv039?ijkey=PGiptM62iGhH0zu&keytype=ref)
+* [addendum](http://www.stat.wisc.edu/~ane/publis/2015Stenz_TICR_addendum.pdf) describing a modification 
+  to the model in the original TICR test. 
 
 The goal of this pipeline is to 
 
