@@ -920,7 +920,7 @@ sub run_mdl {
 	foreach my $partition (1 .. $total) {
 		my $data_file = "$align_root_no_ext-reduced-$partition"."of$total.nex";
 		my $output_name = $partition_dir."$align_root_no_ext-$partition"."of$total.partitions";
-		system("$mdl -ntax $ntax -nchar $nchar{$partition} -scorefile mdl-scores/$align_root_no_ext-all-scores-$partition -nletters $nletters -datafile $data_file -nbestpart $nbestpart -ngroupmax $ngroupmax -o $output_name -ncharbase $min_block_size >/dev/null");
+		system("$mdl -ntax $ntax -nchar $nchar{$partition} -scorefile 'mdl-scores/$align_root_no_ext-all-scores-$partition' -nletters $nletters -datafile '$data_file' -nbestpart $nbestpart -ngroupmax $ngroupmax -o '$output_name' -ncharbase $min_block_size >/dev/null");
 	}
 
 	# Create a Nexus file alignments for each partition

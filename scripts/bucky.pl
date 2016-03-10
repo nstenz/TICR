@@ -286,7 +286,7 @@ if ($input_is_mbsum) {
 
 		# Move mbsum files so they are no longer in subdirectories
 		if (!-d $gene) {
-			system("mv $gene $gene_root");
+			system("mv '$gene' '$gene_root'");
 			push(@gene_roots, $gene_root);
 		}
 		else {
@@ -1120,7 +1120,7 @@ sub run_mbsum {
 	}
 
 	# Summarize gene's tree files
-	system("$mbsum $mb_out_dir$gene_name.*.t -n $trim -o $mb_sum_dir$gene_name.sum >/dev/null 2>&1");
+	system("$mbsum '$mb_out_dir$gene_name.'*.t -n $trim -o '$mb_sum_dir$gene_name.sum' >/dev/null 2>&1");
 
 	# Clean up extracted files
 	chdir($mb_out_dir);
