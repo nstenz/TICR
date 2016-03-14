@@ -456,18 +456,19 @@ sub paup_cstatus {
 
 	my $file_name = $align_root_no_ext."-$token-".($number+1)."of$total.nex";
 
-	my $paup_commands = "execute $file_name;\ncstatus full=yes;\n";
-
 	# File name of log which contains PI character status
 	my $log_path = "log-$align_root_no_ext"."-$token-".($number+1)."of$total.nex";
+
+	# Commands we will issue to PAUP
+	my $paup_commands = "set monitor=no;\nlog file=$log_path;\nexecute $file_name;\ncstatus full=yes;\nlog stop\n";
 
 	# Temporarily redirect STDOUT to prevent clutter
 	open(my $std_out, ">&", *STDOUT);
 	close(STDOUT);
 
 	# Run PAUP via a pipe to avoid having to create a command file
-	#open(my $paup_pipe, "|-", $paup, "-n", "-l", $log_path); 
-	open(my $paup_pipe, "|-",  $paup, "-L", $log_path, "-n"); 
+	#open(my $paup_pipe, "|-",  $paup, "-L", $log_path, "-n"); 
+	open(my $paup_pipe, "|-",  $paup, "-n"); 
 	foreach my $command (split("\n", $paup_commands)) {
 		print {$paup_pipe} $command,"\n";
 	}
@@ -503,7 +504,7 @@ sub paup_cstatus {
 #	}
 
 	my $total_chars;
-	open(my $log, "<", $log_path);
+	open(my $log, "<", $log_path) || die "Could not open '$log_path': $!\n";
 	while (my $line = <$log>) {
 
 		# Determine total number of characters in the alignment
@@ -513,6 +514,9 @@ sub paup_cstatus {
 		# Line containing character states
 		elsif ($line =~ /^\d+\s+/) {
 			my @line = split(" ", $line);	
+
+			# Check that PAUP output character states correctly
+			die "Undefined character states detected in PAUP output.\n" if (!defined($line[2]) || !defined($line[3]));
 
 			# Indicates that character is parsimony-informative
 			if ($line[2] eq '-' && $line[3] ne 'X') {
@@ -1145,39 +1149,57 @@ sub write_partitions {
 
 	my %stats;
 	my %full_partitions;
-	foreach my $partition (sort {$a <=> $b} keys %reduced_partitions) {
+
+	# Check that if we have more than one partition
+	if (scalar(keys %reduced_partitions) > 1) {
+		foreach my $partition (sort {$a <=> $b} keys %reduced_partitions) {
+			my $reduced_start = $reduced_partitions{$partition}->{'START'};
+			my $reduced_end = $reduced_partitions{$partition}->{'END'};
+
+			# The first and last partition must be handled slightly differently
+			if ($partition == 1) {
+				my $next_partition_start = $locations[$reduced_partitions{$partition + 1}->{'START'} - 1];
+				my $this_partition_end = $locations[$reduced_partitions{$partition}->{'END'} - 1];
+				my $end_offset = floor(($next_partition_start - $this_partition_end - 1) / 2);
+
+				$full_partitions{$partition}->{'START'} = 1;
+				$full_partitions{$partition}->{'END'} = $this_partition_end + $end_offset;
+			}
+			elsif ($partition == scalar(keys %reduced_partitions)) {
+				$full_partitions{$partition}->{'START'} = $full_partitions{$partition - 1}->{'END'} + 1;
+				$full_partitions{$partition}->{'END'} = length((values %align)[0]); # + 1?
+			}
+			else {
+				my $next_partition_start = $locations[$reduced_partitions{$partition + 1}->{'START'} - 1];
+				my $this_partition_end = $locations[$reduced_partitions{$partition}->{'END'} - 1];
+				my $end_offset = floor(($next_partition_start - $this_partition_end - 1) / 2);
+
+				$full_partitions{$partition}->{'START'} = $full_partitions{$partition - 1}->{'END'} + 1;
+				$full_partitions{$partition}->{'END'} = $this_partition_end + $end_offset;
+			}
+
+			# Store breakpoint indices for later output
+			$stats{$partition}->{'REDUCED_START'} = $reduced_start;
+			$stats{$partition}->{'REDUCED_END'} = $reduced_end;
+			$stats{$partition}->{'FULL_START'} = $full_partitions{$partition}->{'START'};
+			$stats{$partition}->{'FULL_END'} = $full_partitions{$partition}->{'END'};
+		}
+	}
+	else {
+		my $partition = (keys %reduced_partitions)[0];
 		my $reduced_start = $reduced_partitions{$partition}->{'START'};
 		my $reduced_end = $reduced_partitions{$partition}->{'END'};
 
-		# The first and last partition must be handled slightly differently
-		if ($partition == 1) {
-			my $next_partition_start = $locations[$reduced_partitions{$partition + 1}->{'START'} - 1];
-			my $this_partition_end = $locations[$reduced_partitions{$partition}->{'END'} - 1];
-			my $end_offset = floor(($next_partition_start - $this_partition_end - 1) / 2);
+		$full_partitions{$partition}->{'START'} = 1;
+		$full_partitions{$partition}->{'END'} = length((values %align)[0]); # + 1?
 
-			$full_partitions{$partition}->{'START'} = 1;
-			$full_partitions{$partition}->{'END'} = $this_partition_end + $end_offset;
-		}
-		elsif ($partition == scalar(keys %reduced_partitions)) {
-			$full_partitions{$partition}->{'START'} = $full_partitions{$partition - 1}->{'END'} + 1;
-			$full_partitions{$partition}->{'END'} = length((values %align)[0]); # + 1?
-		}
-		else {
-			my $next_partition_start = $locations[$reduced_partitions{$partition + 1}->{'START'} - 1];
-			my $this_partition_end = $locations[$reduced_partitions{$partition}->{'END'} - 1];
-			my $end_offset = floor(($next_partition_start - $this_partition_end - 1) / 2);
-
-			$full_partitions{$partition}->{'START'} = $full_partitions{$partition - 1}->{'END'} + 1;
-			$full_partitions{$partition}->{'END'} = $this_partition_end + $end_offset;
-		}
-
-		# Store breakpoint indices for later output
 		$stats{$partition}->{'REDUCED_START'} = $reduced_start;
 		$stats{$partition}->{'REDUCED_END'} = $reduced_end;
 		$stats{$partition}->{'FULL_START'} = $full_partitions{$partition}->{'START'};
 		$stats{$partition}->{'FULL_END'} = $full_partitions{$partition}->{'END'};
 	}
-	print "Alignment has been broken down into ",(scalar(keys %full_partitions))," total partitions.\n";
+
+	print "Alignment has been broken down into ",(scalar(keys %full_partitions))," total partition(s).\n";
 
 	# Output potentially useful information on partitioning
 	open(my $stats_file, '>', $align_root_no_ext."-stats.csv");	
