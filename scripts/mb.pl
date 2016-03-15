@@ -200,7 +200,7 @@ if (-e $mb_archive) {
 }
 
 # Unarchive input genes 
-chomp(my @genes = `tar xvf '$init_dir/$archive' -C $gene_dir`);
+chomp(my @genes = `tar xvf '$init_dir/$archive' -C $gene_dir 2>&1`);
 @genes = map { s/x //; $_ } @genes if ($os_name eq "darwin");
 
 chdir($gene_dir);
@@ -615,7 +615,7 @@ sub check_nonconvergent {
 	$SIG{INT} = sub { remove_tree($check_dir); exit(0) };
 
 	# Open tarball in genes directory
-	chomp(my @genes = `tar xvf '$incomplete_archive' -C $check_dir`);
+	chomp(my @genes = `tar xvf '$incomplete_archive' -C $check_dir 2>&1`);
 	@genes = map { s/x //; $_ } @genes if ($os_name eq "darwin");
 	@genes = sort { (local $a = $a) =~ s/.*-(\d+)-\d+\..*/$1/; 
 					(local $b = $b) =~ s/.*-(\d+)-\d+\..*/$1/; 
@@ -633,7 +633,7 @@ sub check_nonconvergent {
 	my $count = 0;
 	foreach my $gene (@genes) {
 
-		chomp(my @contents = `tar xvf '$gene'`);
+		chomp(my @contents = `tar xvf '$gene' 2>&1`);
 		@contents = map { s/x //; $_ } @contents if ($os_name eq "darwin");
 
 		(my $log_file_path = $gene) =~ s/\.tar\.gz$/.log/;
@@ -731,7 +731,7 @@ sub remove_nonconvergent {
 	$SIG{INT} = sub { remove_tree($check_dir); exit(0) };
 
 	# Open tarball in genes directory
-	chomp(my @genes = `tar xvf '$incomplete_archive' -C $check_dir`);
+	chomp(my @genes = `tar xvf '$incomplete_archive' -C $check_dir 2>&1`);
 	@genes = map { s/x //; $_ } @genes if ($os_name eq "darwin");
 	@genes = sort { (local $a = $a) =~ s/.*-(\d+)-\d+\..*/$1/; 
 					(local $b = $b) =~ s/.*-(\d+)-\d+\..*/$1/; 
@@ -749,7 +749,7 @@ sub remove_nonconvergent {
 	my $count = 0;
 	foreach my $gene (@genes) {
 
-		chomp(my @contents = `tar xvf '$gene'`);
+		chomp(my @contents = `tar xvf '$gene' 2>&1`);
 		@contents = map { s/x //; $_ } @contents if ($os_name eq "darwin");
 
 		(my $log_file_path = $gene) =~ s/\.tar\.gz$/.log/;
