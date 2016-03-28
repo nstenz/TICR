@@ -230,7 +230,7 @@ if (-e $bucky_archive && -e $quartet_output) {
 	# the tarball and csv have the same quartet entries 
 
 	# See which quartets in the tarball are complete
-	chomp(my @complete_quartets_tarball = `tar tf $init_dir/$project_name/$bucky_archive`);
+	chomp(my @complete_quartets_tarball = `tar tf '$init_dir/$project_name/$bucky_archive'`);
 
 	# Add quartets to a hash for easier lookup
 	my %complete_quartets_tarball;
@@ -286,7 +286,7 @@ if ($input_is_mbsum) {
 
 		# Move mbsum files so they are no longer in subdirectories
 		if (!-d $gene) {
-			system("mv $gene $gene_root");
+			system("mv '$gene' '$gene_root'");
 			push(@gene_roots, $gene_root);
 		}
 		else {
@@ -325,7 +325,7 @@ if ($input_is_mbsum) {
 else {
 
 	# Unarchive input genes 
-	chomp(@genes = `tar xvf $init_dir/$archive -C $mb_out_dir 2>&1`);
+	chomp(@genes = `tar xvf '$init_dir/$archive' -C '$mb_out_dir' 2>&1`);
 	@genes = map { s/x //; $_ } @genes if ($os_name eq "darwin");
 
 	# Move into MrBayes output directory
@@ -336,7 +336,7 @@ else {
 	foreach my $gene (@genes) {
 
 		# Unzip a single gene
-		chomp(my @mb_files = `tar xvf $gene 2>&1`);
+		chomp(my @mb_files = `tar xvf '$gene' 2>&1`);
 		@mb_files = map { s/x //; $_ } @mb_files if ($os_name eq "darwin");
 
 		# Locate the log file output by MrBayes
@@ -395,7 +395,7 @@ chdir("..");
 # Determine whether or not we need to run mbsum on the specified input
 my $should_summarize = 1;
 if (-e $mbsum_archive && $input_is_dir && !$input_is_mbsum) {
-	chomp(my @sums = `tar tf $mbsum_archive`) || die "Something appears to be wrong with '$mbsum_archive'.\n";
+	chomp(my @sums = `tar tf '$mbsum_archive'`) || die "Something appears to be wrong with '$mbsum_archive'.\n";
 
 	# Check that each gene has actually been summarized, if not redo the summaries
 	if (scalar(@sums) != scalar(@genes)) {
@@ -692,10 +692,10 @@ sub client {
 	# Extract files from mbsum archive
 	my @sums;
 	if ($mbsum_archive =~ /\//) {
-		chomp(@sums = `tar tf $mbsum_archive`);
+		chomp(@sums = `tar tf '$mbsum_archive'`);
 	}
 	else {
-		chomp(@sums = `tar xvf $mbsum_archive 2>&1`);
+		chomp(@sums = `tar xvf '$mbsum_archive' 2>&1`);
 		@sums = map { s/x //; $_ } @sums if ($os_name eq "darwin");
 	}
 
@@ -1091,7 +1091,7 @@ sub run_mbsum {
 	my $tarball = shift;
 
 	# Unzip specified tarball
-	chomp(my @mb_files = `tar xvf $mb_out_dir$tarball -C $mb_out_dir 2>&1`);
+	chomp(my @mb_files = `tar xvf '$mb_out_dir$tarball' -C '$mb_out_dir' 2>&1`);
 	@mb_files = map { s/x //; $_ } @mb_files if ($os_name eq "darwin");
 
 	# Determine name for this partition's log file
@@ -1120,7 +1120,7 @@ sub run_mbsum {
 	}
 
 	# Summarize gene's tree files
-	system("$mbsum $mb_out_dir$gene_name.*.t -n $trim -o $mb_sum_dir$gene_name.sum >/dev/null 2>&1");
+	system("$mbsum '$mb_out_dir$gene_name.'*.t -n $trim -o '$mb_sum_dir$gene_name.sum' >/dev/null 2>&1");
 
 	# Clean up extracted files
 	chdir($mb_out_dir);

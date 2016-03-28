@@ -12,5 +12,5 @@ mdl  :	${OBJS}
 	${CC} -o $@ ${CCFLAGS} ${OBJS}
 
 mdl.o :	mdl.h mdl.c
-	${CC} -c ${CCFLAGS} mdl.c -static
+	${CC} -c ${CCFLAGS} mdl.c
 
