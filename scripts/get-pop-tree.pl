@@ -145,6 +145,6 @@ sub get_QMC_exec {
 		$exec_path = abs_path($dir.$exec) if (-e $dir.$exec);
 	}
 
-	die "Could not find the following executable: '$exec'. This script requires this program in your path.\n" if (!defined($exec_path));
+	die "Could not find the following executable to run Quartet MaxCut: '$exec'. This script requires this program in your path.\nQuartet MaxCut can be downloaded here: http://research.haifa.ac.il/~ssagi/software/QMCN.tar.gz" if (!defined($exec_path));
 	return $exec_path;
 }
