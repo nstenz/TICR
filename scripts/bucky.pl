@@ -492,8 +492,8 @@ foreach my $machine (@machines) {
 	my $pid = fork();	
 	if ($pid == 0) {
 		close(STDIN);
-		close(STDOUT);
-		close(STDERR);
+		#close(STDOUT);
+		#close(STDERR);
 
 		(my $script_name = $script_path) =~ s/.*\///;
 
@@ -626,6 +626,9 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 					my $quartet = join("--", @{$quartets[$job_number]});
 
 					# Tell local clients to move into mbsum directory
+					print "\nclient_ip = '$client_ip'\n";
+					print "server_ip = '$server_ip'\n";
+					print "server cwd = '".abs_path(".")."\n";
 					if ($client_ip eq $server_ip) {
 						print {$client} "CHDIR: ".abs_path(".")."\n";
 					}
@@ -677,7 +680,8 @@ sub client {
 	setpgrp();
 
 	# Determine this host's IP
-	chomp(my $ip = `dig +short myip.opendns.com \@resolver1.opendns.com`); 
+	#chomp(my $ip = `dig +short myip.opendns.com \@resolver1.opendns.com`); 
+	chomp(my $ip = `dig +short myip.opendns.com \@resolver1.opendns.com 2>&1`); 
 
 	# Set IP to localhost if we don't have internet
 	if ($ip !~ /(?:[0-9]{1,3}\.){3}[0-9]{1,3}/) {
@@ -701,8 +705,8 @@ sub client {
 
 	# Spawn more clients
 	my @pids;
-	my $total_forks = get_free_cpus(); 
-	#my $total_forks = 1; 
+	#my $total_forks = get_free_cpus(); 
+	my $total_forks = 1; 
 	if ($total_forks > 1) {
 		foreach my $fork (1 .. $total_forks - 1) {
 			my $pid = fork();
@@ -734,8 +738,10 @@ sub client {
 
 	print {$sock} "NEW: $ip\n";
 	while (chomp(my $response = <$sock>)) {
+		print "SERVER: '$response'\n";
 
 		if ($response =~ /CHDIR: (.*)/) {
+			print "changing directory to '$1'\n";
 			chdir($1);
 		}
 		elsif ($response =~ /NEW: '(.*)' '(.*)'/) {
@@ -771,6 +777,9 @@ sub client {
 			push(@unlink, "$quartet.input", "$quartet.out", "$quartet.cluster", "$quartet.concordance", "$quartet.gene");
 
 			# Run BUCKy on specified quartet
+			print "cwd: '", abs_path("."), "'\n";
+			print "mbsum_archive: '", $mbsum_archive, "'\n";
+			print "bucky call:\n", $bucky, " ", split(" ", $bucky_settings), " -cf ", 0, " -o ", $quartet, " -p ", $prune_file_path, " ", @sums, "\n";
 			system($bucky, split(" ", $bucky_settings), "-cf", 0, "-o", $quartet, "-p", $prune_file_path, @sums);
 			unlink($prune_file_path);
 
