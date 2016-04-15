@@ -630,7 +630,11 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 					print "server_ip = '$server_ip'\n";
 					print "server cwd = '".abs_path(".")."\n";
 					if ($client_ip eq $server_ip) {
+						print "ips are equal.\n";
 						print {$client} "CHDIR: ".abs_path(".")."\n";
+					}
+					else {
+						print "ips are not equal.\n";
 					}
 
 					# Invocation changes if we want to use a prior of infinity
