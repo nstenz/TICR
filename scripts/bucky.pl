@@ -629,7 +629,8 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 					print "\nclient_ip = '$client_ip'\n";
 					print "server_ip = '$server_ip'\n";
 					print "server cwd = '".abs_path(".")."\n";
-					if ($client_ip eq $server_ip) {
+					#if ($client_ip eq $server_ip) {
+					if ($client_ip eq $server_ip || $client_ip eq "127.0.0.1") {
 						print "ips are equal.\n";
 						print {$client} "CHDIR: ".abs_path(".")."\n";
 					}
@@ -689,6 +690,9 @@ sub client {
 
 	# Set IP to localhost if we don't have internet
 	if ($ip !~ /(?:[0-9]{1,3}\.){3}[0-9]{1,3}/) {
+		$ip = "127.0.0.1";
+	}
+	elsif ($server_ip eq "127.0.0.1") {
 		$ip = "127.0.0.1";
 	}
 
