@@ -456,17 +456,19 @@ sub paup_cstatus {
 
 	my $file_name = $align_root_no_ext."-$token-".($number+1)."of$total.nex";
 
-	my $paup_commands = "execute $file_name;\ncstatus full=yes;\n";
-
 	# File name of log which contains PI character status
 	my $log_path = "log-$align_root_no_ext"."-$token-".($number+1)."of$total.nex";
+
+	# Commands we will issue to PAUP
+	my $paup_commands = "set monitor=no;\nlog file=$log_path;\nexecute $file_name;\ncstatus full=yes;\nlog stop\n";
 
 	# Temporarily redirect STDOUT to prevent clutter
 	open(my $std_out, ">&", *STDOUT);
 	close(STDOUT);
 
 	# Run PAUP via a pipe to avoid having to create a command file
-	open(my $paup_pipe, "|-", $paup, "-n", "-l", $log_path); 
+	#open(my $paup_pipe, "|-",  $paup, "-L", $log_path, "-n"); 
+	open(my $paup_pipe, "|-",  $paup, "-n"); 
 	foreach my $command (split("\n", $paup_commands)) {
 		print {$paup_pipe} $command,"\n";
 	}
@@ -502,7 +504,7 @@ sub paup_cstatus {
 #	}
 
 	my $total_chars;
-	open(my $log, "<", $log_path);
+	open(my $log, "<", $log_path) || die "Could not open '$log_path': $!\n";
 	while (my $line = <$log>) {
 
 		# Determine total number of characters in the alignment
@@ -512,6 +514,9 @@ sub paup_cstatus {
 		# Line containing character states
 		elsif ($line =~ /^\d+\s+/) {
 			my @line = split(" ", $line);	
+
+			# Check that PAUP output character states correctly
+			die "Undefined character states detected in PAUP output.\n" if (!defined($line[2]) || !defined($line[3]));
 
 			# Indicates that character is parsimony-informative
 			if ($line[2] eq '-' && $line[3] ne 'X') {
@@ -719,7 +724,7 @@ sub run_mdl {
 
 				# Execute this perl script on the given machine
 				# -tt forces pseudo-terminal allocation and lets us stop remote processes
-				exec("ssh", "-tt", $machine, "perl", "/tmp/$script_name", "--server-ip=$server_ip");
+				exec("ssh", "-tt", $machine, "perl", "/tmp/$script_name", "--server-ip=$server_ip:$port");
 			}
 			else {
 				# Send this script to the machine
@@ -729,7 +734,7 @@ sub run_mdl {
 				system("cp", $paup , "/tmp");
 
 				# Execute this perl script on the given machine
-				exec("perl", "/tmp/$script_name", "--server-ip=127.0.0.1");
+				exec("perl", "/tmp/$script_name", "--server-ip=127.0.0.1:$port");
 			}
 
 			exit(0);
@@ -919,7 +924,7 @@ sub run_mdl {
 	foreach my $partition (1 .. $total) {
 		my $data_file = "$align_root_no_ext-reduced-$partition"."of$total.nex";
 		my $output_name = $partition_dir."$align_root_no_ext-$partition"."of$total.partitions";
-		system("$mdl -ntax $ntax -nchar $nchar{$partition} -scorefile mdl-scores/$align_root_no_ext-all-scores-$partition -nletters $nletters -datafile $data_file -nbestpart $nbestpart -ngroupmax $ngroupmax -o $output_name -ncharbase $min_block_size >/dev/null");
+		system("$mdl -ntax $ntax -nchar $nchar{$partition} -scorefile 'mdl-scores/$align_root_no_ext-all-scores-$partition' -nletters $nletters -datafile '$data_file' -nbestpart $nbestpart -ngroupmax $ngroupmax -o '$output_name' -ncharbase $min_block_size >/dev/null");
 	}
 
 	# Create a Nexus file alignments for each partition
@@ -1144,39 +1149,57 @@ sub write_partitions {
 
 	my %stats;
 	my %full_partitions;
-	foreach my $partition (sort {$a <=> $b} keys %reduced_partitions) {
+
+	# Check that if we have more than one partition
+	if (scalar(keys %reduced_partitions) > 1) {
+		foreach my $partition (sort {$a <=> $b} keys %reduced_partitions) {
+			my $reduced_start = $reduced_partitions{$partition}->{'START'};
+			my $reduced_end = $reduced_partitions{$partition}->{'END'};
+
+			# The first and last partition must be handled slightly differently
+			if ($partition == 1) {
+				my $next_partition_start = $locations[$reduced_partitions{$partition + 1}->{'START'} - 1];
+				my $this_partition_end = $locations[$reduced_partitions{$partition}->{'END'} - 1];
+				my $end_offset = floor(($next_partition_start - $this_partition_end - 1) / 2);
+
+				$full_partitions{$partition}->{'START'} = 1;
+				$full_partitions{$partition}->{'END'} = $this_partition_end + $end_offset;
+			}
+			elsif ($partition == scalar(keys %reduced_partitions)) {
+				$full_partitions{$partition}->{'START'} = $full_partitions{$partition - 1}->{'END'} + 1;
+				$full_partitions{$partition}->{'END'} = length((values %align)[0]); # + 1?
+			}
+			else {
+				my $next_partition_start = $locations[$reduced_partitions{$partition + 1}->{'START'} - 1];
+				my $this_partition_end = $locations[$reduced_partitions{$partition}->{'END'} - 1];
+				my $end_offset = floor(($next_partition_start - $this_partition_end - 1) / 2);
+
+				$full_partitions{$partition}->{'START'} = $full_partitions{$partition - 1}->{'END'} + 1;
+				$full_partitions{$partition}->{'END'} = $this_partition_end + $end_offset;
+			}
+
+			# Store breakpoint indices for later output
+			$stats{$partition}->{'REDUCED_START'} = $reduced_start;
+			$stats{$partition}->{'REDUCED_END'} = $reduced_end;
+			$stats{$partition}->{'FULL_START'} = $full_partitions{$partition}->{'START'};
+			$stats{$partition}->{'FULL_END'} = $full_partitions{$partition}->{'END'};
+		}
+	}
+	else {
+		my $partition = (keys %reduced_partitions)[0];
 		my $reduced_start = $reduced_partitions{$partition}->{'START'};
 		my $reduced_end = $reduced_partitions{$partition}->{'END'};
 
-		# The first and last partition must be handled slightly differently
-		if ($partition == 1) {
-			my $next_partition_start = $locations[$reduced_partitions{$partition + 1}->{'START'} - 1];
-			my $this_partition_end = $locations[$reduced_partitions{$partition}->{'END'} - 1];
-			my $end_offset = floor(($next_partition_start - $this_partition_end - 1) / 2);
+		$full_partitions{$partition}->{'START'} = 1;
+		$full_partitions{$partition}->{'END'} = length((values %align)[0]); # + 1?
 
-			$full_partitions{$partition}->{'START'} = 1;
-			$full_partitions{$partition}->{'END'} = $this_partition_end + $end_offset;
-		}
-		elsif ($partition == scalar(keys %reduced_partitions)) {
-			$full_partitions{$partition}->{'START'} = $full_partitions{$partition - 1}->{'END'} + 1;
-			$full_partitions{$partition}->{'END'} = length((values %align)[0]); # + 1?
-		}
-		else {
-			my $next_partition_start = $locations[$reduced_partitions{$partition + 1}->{'START'} - 1];
-			my $this_partition_end = $locations[$reduced_partitions{$partition}->{'END'} - 1];
-			my $end_offset = floor(($next_partition_start - $this_partition_end - 1) / 2);
-
-			$full_partitions{$partition}->{'START'} = $full_partitions{$partition - 1}->{'END'} + 1;
-			$full_partitions{$partition}->{'END'} = $this_partition_end + $end_offset;
-		}
-
-		# Store breakpoint indices for later output
 		$stats{$partition}->{'REDUCED_START'} = $reduced_start;
 		$stats{$partition}->{'REDUCED_END'} = $reduced_end;
 		$stats{$partition}->{'FULL_START'} = $full_partitions{$partition}->{'START'};
 		$stats{$partition}->{'FULL_END'} = $full_partitions{$partition}->{'END'};
 	}
-	print "Alignment has been broken down into ",(scalar(keys %full_partitions))," total partitions.\n";
+
+	print "Alignment has been broken down into ",(scalar(keys %full_partitions))," total partition(s).\n";
 
 	# Output potentially useful information on partitioning
 	open(my $stats_file, '>', $align_root_no_ext."-stats.csv");	
@@ -1214,7 +1237,7 @@ sub write_partitions {
 	#system("tar czf $align_root_no_ext.tar.gz @gene_file_names --remove-files");
 	system("tar", "czf", "$align_root_no_ext.tar.gz", @gene_file_names);
 	unlink(@gene_file_names);
-	system("mv $align_root_no_ext.tar.gz ..");
+	system("mv '$align_root_no_ext.tar.gz' ..");
 	print "done.\n";
 
 	# Tarball and zip the mdl partitioning files
@@ -1225,7 +1248,7 @@ sub write_partitions {
 	#system("tar czf $align_root_no_ext-partitions.tar.gz @partitioning_files --remove-files");
 	system("tar", "czf", "$align_root_no_ext-partitions.tar.gz", @partitioning_files);
 	unlink(@partitioning_files);
-	system("mv $align_root_no_ext-partitions.tar.gz ..");
+	system("mv '$align_root_no_ext-partitions.tar.gz' ..");
 	print "done.\n";
 
 	# Tarball and zip the parismony scores for each possible partition
@@ -1236,7 +1259,7 @@ sub write_partitions {
 	#system("tar czf $align_root_no_ext-scores.tar.gz @score_files --remove-files");
 	system("tar", "czf", "$align_root_no_ext-scores.tar.gz", @score_files);
 	unlink(@score_files);
-	system("mv $align_root_no_ext-scores.tar.gz ..");
+	system("mv '$align_root_no_ext-scores.tar.gz' ..");
 	print "done.\n";
 
 	# Remove the now empty directories
@@ -1315,7 +1338,9 @@ sub write_partition {
 }
 
 sub client {
-	my ($opt_name, $server_ip) = @_;	
+	my ($opt_name, $address) = @_;	
+
+	my ($server_ip, $port) = split(":", $address);
 
 	chdir("/tmp");
 	my $paup = "/tmp/paup";
@@ -1454,7 +1479,8 @@ sub parallelize {
 
 		# Spawn a new process if running less than maximum
 		if ($running_forks < $max_forks) {
-			my $pid = fork();
+			my $pid;
+			until (defined($pid)) { $pid = fork(); usleep(30000); }
 			if ($pid == 0) {
 				$method_args{'NUM'} = $i;
 				$method_args{'TOTAL'} = $total;
@@ -1506,7 +1532,8 @@ sub parallelize_with_return {
 		# Spawn a new process if running less than maximum
 		if ($running_forks < $max_forks) {
 			my $pipe = new IO::Pipe;
-			my $pid = fork();
+			my $pid;
+			until (defined($pid)) { $pid = fork(); usleep(30000); }
 
 			if ($pid == 0) {
 				my $TO_PARENT = $pipe->writer();
@@ -1575,7 +1602,7 @@ sub get_free_cpus {
 	}
 	else {
 		# Linux
-		chomp(@percent_free_cpu = `top -bn2d0.05 | grep "Cpu(s)"`);
+		chomp(@percent_free_cpu = `top -b -n2 -d0.05 | grep "Cpu(s)"`);
 	}
 
 	my $percent_free_cpu = pop(@percent_free_cpu);
@@ -1612,25 +1639,38 @@ sub get_free_cpus {
 sub sec2human {
 	my $secs = shift;
 
+	# Constants
+	my $secs_in_min = 60;
+	my $secs_in_hour = 60 * 60;
+	my $secs_in_day = 24 * 60 * 60;
+
 	$secs = int($secs);
 
 	return "0 seconds" if (!$secs);
 
+	# Calculate units of time
+	my $days = int($secs / $secs_in_day);
+	my $hours = ($secs / $secs_in_hour) % 24;
+	my $mins = ($secs / $secs_in_min) % 60;
+	$secs = $secs % 60;
+
+	# Format return nicely
 	my $time;
-	if (int($secs / (24 * 60 * 60)) > 0) {
-		$time .= (int($secs / (24 * 60 * 60)) > 1).((int($secs / (24 * 60 * 60)) != 1) ? " days, " : " day, ");
+	if ($days) {
+		$time .= ($days != 1) ? "$days days, " : "$days day, ";
 	}
-	if (($secs / (60 * 60)) % 24 > 0) {
-		$time .= (($secs / (60 * 60)) % 24).((($secs / (60 * 60)) % 24 != 1) ? " hours, " : " hour, ");
+	if ($hours) {
+		$time .= ($hours != 1) ? "$hours hours, " : "$hours hour, ";
 	}
-	if (($secs / 60) % 60 > 0) {
-		$time .= (($secs / 60) % 60).(((($secs / 60) % 60) != 1) ? " minutes, " : " minute, ");
+	if ($mins) {
+		$time .= ($mins != 1) ? "$mins minutes, " : "$mins minute, ";
 	}
-	if (($secs % 60) > 0) {
-		$time .= ($secs % 60).((($secs % 60) != 1) ? " seconds " : " second ");
+	if ($secs) {
+		$time .= ($secs != 1) ? "$secs seconds " : "$secs second ";
 	}
 	else {
-		$time .= "0 seconds ";
+		# Remove comma
+		chop($time);
 	}
 	chop($time);
 

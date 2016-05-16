@@ -192,7 +192,7 @@ if (-e $mb_archive) {
 	print "Completed runs contained in this archive will be removed from the job queue.\n";
 
 	# Add gene names in tarball to list of completed genes
-	chomp(my @complete_genes = `tar tf $mb_archive`);
+	chomp(my @complete_genes = `tar tf '$mb_archive'`);
 	foreach my $gene (@complete_genes) {
 		$gene =~ s/\.tar\.gz//;
 		$complete_genes{$gene}++;
@@ -200,20 +200,16 @@ if (-e $mb_archive) {
 }
 
 # Unarchive input genes 
-chomp(my @genes = `tar xvf $init_dir/$archive -C $gene_dir`);
+chomp(my @genes = `tar xvf '$init_dir/$archive' -C $gene_dir 2>&1`);
 @genes = map { s/x //; $_ } @genes if ($os_name eq "darwin");
 
 chdir($gene_dir);
-
-#@genes = glob($archive_root_no_ext."*.nex");
-#@genes = sort { (local $a = $a) =~ s/.*-(\d+)-\d+\..*/$1/; 
-#				(local $b = $b) =~ s/.*-(\d+)-\d+\..*/$1/; 
-#				$a <=> $b } @genes;
 
 # Remove completed genes
 if (%complete_genes) {
 	foreach my $index (reverse(0 .. $#genes)) {
 		if (exists($complete_genes{$genes[$index]})) {
+			unlink($genes[$index]);
 			splice(@genes, $index, 1);
 		}
 	}
@@ -285,7 +281,7 @@ foreach my $machine (@machines) {
 
 			# Execute this perl script on the given machine
 			# -tt forces pseudo-terminal allocation and lets us stop remote processes
-			exec("ssh", "-tt", "$machine", "perl", "/tmp/$script_name", "--server-ip=$server_ip");
+			exec("ssh", "-tt", "$machine", "perl", "/tmp/$script_name", "--server-ip=$server_ip:$port");
 		}
 		else {
 			# Send this script to the machine
@@ -295,7 +291,7 @@ foreach my $machine (@machines) {
 			system("cp", $mb, "/tmp");
 
 			# Execute this perl script on the given machine
-			exec("perl", "/tmp/$script_name", "--server-ip=127.0.0.1");
+			exec("perl", "/tmp/$script_name", "--server-ip=127.0.0.1:$port");
 		}
 
 		exit(0);
@@ -308,6 +304,9 @@ foreach my $machine (@machines) {
 #chdir($gene_dir);
 
 my $select = IO::Select->new($sock);
+
+# Don't create zombies
+$SIG{CHLD} = 'IGNORE';
 
 # Stores which job is next in queue 
 my $job_number = 0;
@@ -360,31 +359,38 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 				$complete_count++;				
 				printf("  Analyses complete: %".$num_digits."d/%d.\r", $complete_count, scalar(@genes));
 
-				# Check if this is the first to complete, if so we must create the directory
-				my $completed_gene = $1;
-				if (!-e "../$mb_archive") {
-					system("tar", "cf", "../$mb_archive", $completed_gene);
-					unlink($completed_gene);
-				}
-				else {
+				# Perform appending of new gene to tarball in a fork as this can take some time
+				my $pid;
+				until (defined($pid)) { $pid = fork(); usleep(30000); }
 
-					# Perform appending of new gene to tarball in a fork as this can take some time
-					my $pid = fork();
-					if ($pid == 0) {
+				if ($pid == 0) {
+
+					# Check if this is the first to complete, if so we must create the directory
+					my $completed_gene = $1;
+					if (!-e "../$mb_archive") {
+						system("touch", "$mb_archive");
+						system("tar", "cf", "../$mb_archive", $completed_gene);
+						unlink($completed_gene);
+					}
+					else {
 
 						# Obtain a file lock on archive so another process doesn't simultaneously try to add to it
 						open(my $mb_archive_file, "<", "../$mb_archive");
 						flock($mb_archive_file, LOCK_EX) || die "Could not lock '$mb_archive_file': $!.\n";
-						
+
 						# Add completed gene
 						system("tar", "rf", "../$mb_archive", $completed_gene);
+						unlink($completed_gene);
 
 						# Release lock
 						flock($mb_archive_file, LOCK_UN) || die "Could not unlock '$mb_archive_file': $!.\n";
 						close($mb_archive_file);
 
-						exit(0);
 					}
+					exit(0);
+				}
+				else {
+					push(@pids, $pid);
 				}
 			}
 
@@ -401,16 +407,20 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 					# Check whether the client is remote or local, send it needed files if remote
 					if ($client_ip ne $server_ip) {
 
-						$SIG{CHLD} = 'IGNORE';
-
 						# Fork to perform the file transfer and prevent stalling the server
-						my $pid = fork(); 
+						my $pid;
+						until (defined($pid)) { $pid = fork(); usleep(30000); }
+
+						#my $pid = fork(); 
 						if ($pid == 0) {
 							send_file({'FILE_PATH' => $gene, 'FILE_HANDLE' => $client});	
 							unlink($gene);
 
 							print {$client} "NEW: $gene\n";
 							exit(0);
+						}
+						else {
+							push(@pids, $pid);
 						}
 					}
 					else {
@@ -420,7 +430,7 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 					$job_number++;
 				}
 				else {
-						# Client has asked for a job, but there are none remaining
+					# Client has asked for a job, but there are none remaining
 					print {$client} "HANGUP\n";
 					$select->remove($client);
 					$client->close();
@@ -440,40 +450,14 @@ foreach my $pid (@pids) {
 print "\n  All connections closed.\n";
 print "Total execution time: ", sec2human(time() - $time), ".\n\n";
 
-#print "removing $initial_directory/$project_name/$gene_dir\n";
-rmdir("$initial_directory/$project_name/$gene_dir");
-
-## Create list of tarballs that should be present
-#my @tarballs = map { local $_ = $_; $_ .= ".tar.gz"; $_ } @genes;
-#
-#print "Compressing and archiving results... ";
-#
-## Check if output from a previous run exists
-#if (-e "../".$mb_archive) {
-#
-#	# Go to project directory
-#	chdir("..");
-#
-#	# Unarchive old archive and add its contents to @tarballs
-#	chomp(my @complete_genes = `tar xvf $mb_archive -C $gene_dir`);
-#	push(@tarballs, @complete_genes);
-#
-#	# Reenter gene directory
-#	chdir($gene_dir);
-#}
-#
-## Archive the genes into a single tarball and move it back into the project directory
-#system("tar", "czf", $mb_archive, @tarballs, "--remove-files");
-#system("mv", $mb_archive, "..");
-#
-## Go back to project directory
-#chdir("..");
-#rmdir($gene_dir);
-#
-#print "done.\n\n";
+# Go back to project directory, delete empty gene dir
+chdir("..");
+&INT_handler;
 
 sub client {
-	my ($opt_name, $server_ip) = @_;	
+	my ($opt_name, $address) = @_;	
+
+	my ($server_ip, $port) = split(":", $address);
 
 	chdir("/tmp");
 	my $mb = "/tmp/mb";
@@ -513,7 +497,7 @@ sub client {
 	my @unlink;
 
 	# Change signal handling so killing the server kills these processes and cleans up
-	#$SIG{CHLD} = 'IGNORE';
+	$SIG{CHLD} = 'IGNORE';
 	$SIG{HUP}  = sub { unlink($0, $mb); kill -15, $$; };
 	$SIG{TERM} = sub { unlink(glob($gene."*")) if defined($gene); exit(0)};
 
@@ -552,6 +536,7 @@ sub client {
 			# Zip and tarball the results
 			my @results = glob($gene."*");
 			my $gene_archive_name = "$gene.tar.gz";
+			@results = grep {!/\Q$gene_archive_name\E/} @results;
 			system("tar", "czf", $gene_archive_name, @results);
 			unlink(@results);
 
@@ -642,7 +627,7 @@ sub check_nonconvergent {
 	$SIG{INT} = sub { remove_tree($check_dir); exit(0) };
 
 	# Open tarball in genes directory
-	chomp(my @genes = `tar xvf $incomplete_archive -C $check_dir`);
+	chomp(my @genes = `tar xvf '$incomplete_archive' -C $check_dir 2>&1`);
 	@genes = map { s/x //; $_ } @genes if ($os_name eq "darwin");
 	@genes = sort { (local $a = $a) =~ s/.*-(\d+)-\d+\..*/$1/; 
 					(local $b = $b) =~ s/.*-(\d+)-\d+\..*/$1/; 
@@ -660,7 +645,7 @@ sub check_nonconvergent {
 	my $count = 0;
 	foreach my $gene (@genes) {
 
-		chomp(my @contents = `tar xvf $gene`);
+		chomp(my @contents = `tar xvf '$gene' 2>&1`);
 		@contents = map { s/x //; $_ } @contents if ($os_name eq "darwin");
 
 		(my $log_file_path = $gene) =~ s/\.tar\.gz$/.log/;
@@ -758,7 +743,7 @@ sub remove_nonconvergent {
 	$SIG{INT} = sub { remove_tree($check_dir); exit(0) };
 
 	# Open tarball in genes directory
-	chomp(my @genes = `tar xvf $incomplete_archive -C $check_dir`);
+	chomp(my @genes = `tar xvf '$incomplete_archive' -C $check_dir 2>&1`);
 	@genes = map { s/x //; $_ } @genes if ($os_name eq "darwin");
 	@genes = sort { (local $a = $a) =~ s/.*-(\d+)-\d+\..*/$1/; 
 					(local $b = $b) =~ s/.*-(\d+)-\d+\..*/$1/; 
@@ -776,7 +761,7 @@ sub remove_nonconvergent {
 	my $count = 0;
 	foreach my $gene (@genes) {
 
-		chomp(my @contents = `tar xvf $gene`);
+		chomp(my @contents = `tar xvf '$gene' 2>&1`);
 		@contents = map { s/x //; $_ } @contents if ($os_name eq "darwin");
 
 		(my $log_file_path = $gene) =~ s/\.tar\.gz$/.log/;
@@ -910,9 +895,8 @@ sub INT_handler {
 
 	# Kill ssh process(es) spawn by this script
 	foreach my $pid (@pids) {
-		#kill(9, $pid);
-		#kill(1, $pid);
-		kill(-1, $pid);
+		#kill(-1, $pid);
+		kill(15, $pid);
 	}
 
 	# Move into gene directory
@@ -967,25 +951,38 @@ sub get_num_digits {
 sub sec2human {
 	my $secs = shift;
 
+	# Constants
+	my $secs_in_min = 60;
+	my $secs_in_hour = 60 * 60;
+	my $secs_in_day = 24 * 60 * 60;
+
 	$secs = int($secs);
 
 	return "0 seconds" if (!$secs);
 
+	# Calculate units of time
+	my $days = int($secs / $secs_in_day);
+	my $hours = ($secs / $secs_in_hour) % 24;
+	my $mins = ($secs / $secs_in_min) % 60;
+	$secs = $secs % 60;
+
+	# Format return nicely
 	my $time;
-	if (int($secs / (24 * 60 * 60)) > 0) {
-		$time .= (int($secs / (24 * 60 * 60)) > 1).((int($secs / (24 * 60 * 60)) != 1) ? " days, " : " day, ");
+	if ($days) {
+		$time .= ($days != 1) ? "$days days, " : "$days day, ";
 	}
-	if (($secs / (60 * 60)) % 24 > 0) {
-		$time .= (($secs / (60 * 60)) % 24).((($secs / (60 * 60)) % 24 != 1) ? " hours, " : " hour, ");
+	if ($hours) {
+		$time .= ($hours != 1) ? "$hours hours, " : "$hours hour, ";
 	}
-	if (($secs / 60) % 60 > 0) {
-		$time .= (($secs / 60) % 60).(((($secs / 60) % 60) != 1) ? " minutes, " : " minute, ");
+	if ($mins) {
+		$time .= ($mins != 1) ? "$mins minutes, " : "$mins minute, ";
 	}
-	if (($secs % 60) > 0) {
-		$time .= ($secs % 60).((($secs % 60) != 1) ? " seconds " : " second ");
+	if ($secs) {
+		$time .= ($secs != 1) ? "$secs seconds " : "$secs second ";
 	}
 	else {
-		$time .= "0 seconds ";
+		# Remove comma
+		chop($time);
 	}
 	chop($time);
 
@@ -1007,7 +1004,7 @@ sub get_free_cpus {
 	}
 	else {
 		# Linux
-		chomp(@percent_free_cpu = `top -bn2d0.05 | grep "Cpu(s)"`);
+		chomp(@percent_free_cpu = `top -b -n2 -d0.05 | grep "Cpu(s)"`);
 	}
 
 	my $percent_free_cpu = pop(@percent_free_cpu);

@@ -230,7 +230,7 @@ if (-e $bucky_archive && -e $quartet_output) {
 	# the tarball and csv have the same quartet entries 
 
 	# See which quartets in the tarball are complete
-	chomp(my @complete_quartets_tarball = `tar tf $init_dir/$project_name/$bucky_archive`);
+	chomp(my @complete_quartets_tarball = `tar tf '$init_dir/$project_name/$bucky_archive'`);
 
 	# Add quartets to a hash for easier lookup
 	my %complete_quartets_tarball;
@@ -286,7 +286,7 @@ if ($input_is_mbsum) {
 
 		# Move mbsum files so they are no longer in subdirectories
 		if (!-d $gene) {
-			system("mv $gene $gene_root");
+			system("mv '$gene' '$gene_root'");
 			push(@gene_roots, $gene_root);
 		}
 		else {
@@ -301,37 +301,73 @@ if ($input_is_mbsum) {
 		remove_tree($dir);
 	}
 
-	# Parse one of input genes, assumes same taxa are present in ALL genes
-	@taxa = @{parse_mbsum_taxa($genes[0])};
+	# Parse taxa present in each gene, determine which are shared across all genes
+	my %taxa;
+	foreach my $gene (@genes) {
+		my @taxa = @{parse_mbsum_taxa($gene)};
 
+		# Count taxa present
+		foreach my $taxon (@taxa) {
+			$taxa{$taxon}++;
+		}
+	}
+	
+	# Add taxa present in all genes to analysis
+	foreach my $taxon (keys %taxa) {
+		if ($taxa{$taxon} == scalar(@genes)) {
+			push(@taxa, $taxon);
+		}
+	}
+
+	# Archive genes
 	system("tar", "czf", $mbsum_archive, @genes);
 }
 else {
 
 	# Unarchive input genes 
-	chomp(@genes = `tar xvf $init_dir/$archive -C $mb_out_dir 2>&1`);
+	chomp(@genes = `tar xvf '$init_dir/$archive' -C '$mb_out_dir' 2>&1`);
 	@genes = map { s/x //; $_ } @genes if ($os_name eq "darwin");
 
 	# Move into MrBayes output directory
 	chdir($mb_out_dir);
 
-	# Unzip a single gene
-	chomp(my @mb_files = `tar xvf $genes[0] 2>&1`);
-	@mb_files = map { s/x //; $_ } @mb_files if ($os_name eq "darwin");
+	# Check that each gene has a log file
+	my %taxa;
+	foreach my $gene (@genes) {
 
-	# Locate the log file output by MrBayes
-	my $log_file_name;
-	foreach my $file (@mb_files) {
-		if ($file =~ /\.log$/) {
-			$log_file_name = $file;
-			last;
+		# Unzip a single gene
+		chomp(my @mb_files = `tar xvf '$gene' 2>&1`);
+		@mb_files = map { s/x //; $_ } @mb_files if ($os_name eq "darwin");
+
+		# Locate the log file output by MrBayes
+		my $log_file_name;
+		foreach my $file (@mb_files) {
+			if ($file =~ /\.log$/) {
+				$log_file_name = $file;
+				last;
+			}
+		}
+		die "Could not locate log file for '$gene'.\n" if (!defined($log_file_name));
+
+		# Parse log file for run information
+		my $mb_log = parse_mb_log($log_file_name);
+
+		# Check for taxa present
+		my @taxa = @{$mb_log->{TAXA}};
+		foreach my $taxon (@taxa) {
+			$taxa{$taxon}++;
+		}
+
+		# Clean up
+		unlink(@mb_files);
+	}
+
+	# Add taxa present in all genes to analysis
+	foreach my $taxon (keys %taxa) {
+		if ($taxa{$taxon} == scalar(@genes)) {
+			push(@taxa, $taxon);
 		}
 	}
-	die "Could not locate log file for '$genes[0]'.\n" if (!defined($log_file_name));
-
-	# Parse log file for run information
-	my $mb_log = parse_mb_log($log_file_name);
-	@taxa = @{$mb_log->{TAXA}};
 }
 
 # Create list of possible quartets
@@ -350,8 +386,8 @@ if (%complete_quartets) {
 	}
 }
 
-print "Found ".scalar(@taxa)." taxa in this archive, ".scalar(@quartets)." of $original_size ".
-      "possible quartets will be run using output from ".scalar(@genes)." total genes.\n";
+print "Found ".scalar(@taxa)." taxa shared across all genes in this archive, ".scalar(@quartets).
+	  " of $original_size possible quartets will be run using output from ".scalar(@genes)." total genes.\n";
 
 # Go back to working directory
 chdir("..");
@@ -359,7 +395,7 @@ chdir("..");
 # Determine whether or not we need to run mbsum on the specified input
 my $should_summarize = 1;
 if (-e $mbsum_archive && $input_is_dir && !$input_is_mbsum) {
-	chomp(my @sums = `tar tf $mbsum_archive`) || die "Something appears to be wrong with '$mbsum_archive'.\n";
+	chomp(my @sums = `tar tf '$mbsum_archive'`) || die "Something appears to be wrong with '$mbsum_archive'.\n";
 
 	# Check that each gene has actually been summarized, if not redo the summaries
 	if (scalar(@sums) != scalar(@genes)) {
@@ -372,6 +408,7 @@ if (-e $mbsum_archive && $input_is_dir && !$input_is_mbsum) {
 
 $should_summarize = 0 if ($input_is_mbsum);
 
+# Summarize MrBayes output if needed
 if ($should_summarize) {
 	# Run mbsum on each gene
 	print "Summarizing MrBayes output for ".scalar(@genes)." genes.\n";
@@ -381,7 +418,9 @@ if ($should_summarize) {
 
 		# Wait until a CPU is available
 		until(okay_to_run(\@pids)) {};
-		my $pid = fork();
+
+		my $pid;
+		until (defined($pid)) { $pid = fork(); usleep(30000); }
 
 		# The child fork
 		if ($pid == 0) {
@@ -477,7 +516,7 @@ foreach my $machine (@machines) {
 
 			# Execute this perl script in client mode on the given machine
 			# -tt forces pseudo-terminal allocation and lets us stop remote processes
-			exec("ssh", "-tt", $machine, "perl", "/tmp/$script_name", $mbsum_archive, "--server-ip=$server_ip");
+			exec("ssh", "-tt", $machine, "perl", "/tmp/$script_name", $mbsum_archive, "--server-ip=$server_ip:$port");
 		}
 		else {
 			# Send this script to the machine
@@ -487,7 +526,7 @@ foreach my $machine (@machines) {
 			system("cp", $bucky, "/tmp");
 
 			# Execute this perl script in client mode
-			exec("perl", "/tmp/$script_name", "$init_dir/$project_name/$mb_sum_dir/$mbsum_archive", "--server-ip=127.0.0.1");
+			exec("perl", "/tmp/$script_name", "$init_dir/$project_name/$mb_sum_dir/$mbsum_archive", "--server-ip=127.0.0.1:$port");
 		}
 
 		exit(0);
@@ -627,7 +666,9 @@ print "Total execution time: ", sec2human(time() - $time), ".\n\n";
 rmdir("$initial_directory/$project_name/$mb_sum_dir");
 
 sub client {
-	my ($opt_name, $server_ip) = @_;	
+	my ($opt_name, $address) = @_;	
+
+	my ($server_ip, $port) = split(":", $address);
 
 	chdir("/tmp");
 	my $bucky = "/tmp/bucky";
@@ -651,10 +692,10 @@ sub client {
 	# Extract files from mbsum archive
 	my @sums;
 	if ($mbsum_archive =~ /\//) {
-		chomp(@sums = `tar tf $mbsum_archive`);
+		chomp(@sums = `tar tf '$mbsum_archive'`);
 	}
 	else {
-		chomp(@sums = `tar xvf $mbsum_archive 2>&1`);
+		chomp(@sums = `tar xvf '$mbsum_archive' 2>&1`);
 		@sums = map { s/x //; $_ } @sums if ($os_name eq "darwin");
 	}
 
@@ -781,7 +822,8 @@ sub client {
 sub dump_quartets {
 	my $quartets = shift;
 
-	my $pid = fork();
+	my $pid;
+	until (defined($pid)) { $pid = fork(); usleep(30000); }
 	if ($pid == 0) {
 
 		my @completed_quartets = keys %{$quartets};
@@ -1030,13 +1072,14 @@ sub parse_mbsum_taxa {
 	while (my $line = <$mbsum_file>) {
 		$in_translate_block++ if ($line =~ /translate/);
 
-		if ($in_translate_block && $line =~ /\d+ (\S+)[,;]/) {
+		if ($in_translate_block == 1 && $line =~ /\d+\s+(\S+)(,|;)?/) {
 			push(@taxa, $1);
 		}
-
-		undef($in_translate_block) if ($in_translate_block && $line =~ /\d+ (\S+);/);
 	}
 	close($mbsum_file);
+
+	# Check if there were multiple translate blocks in the file which is indicative of an error with the creation of the file
+	die "Something is amiss with '$mbsum_file_name', multiple translate blocks ($in_translate_block) were detected when there should only be one.\n" if ($in_translate_block > 1);
 
 	# Check that we actually parsed something, otherwise input is improperly formatted/not mbsum output
 	die "No taxa parsed for file '$mbsum_file_name', does '$archive' actually contain mbsum output?.\n" if (!@taxa);
@@ -1048,7 +1091,7 @@ sub run_mbsum {
 	my $tarball = shift;
 
 	# Unzip specified tarball
-	chomp(my @mb_files = `tar xvf $mb_out_dir$tarball -C $mb_out_dir 2>&1`);
+	chomp(my @mb_files = `tar xvf '$mb_out_dir$tarball' -C '$mb_out_dir' 2>&1`);
 	@mb_files = map { s/x //; $_ } @mb_files if ($os_name eq "darwin");
 
 	# Determine name for this partition's log file
@@ -1077,7 +1120,7 @@ sub run_mbsum {
 	}
 
 	# Summarize gene's tree files
-	system("$mbsum $mb_out_dir$gene_name.*.t -n $trim -o $mb_sum_dir$gene_name.sum >/dev/null 2>&1");
+	system("$mbsum '$mb_out_dir$gene_name.'*.t -n $trim -o '$mb_sum_dir$gene_name.sum' >/dev/null 2>&1");
 
 	# Clean up extracted files
 	chdir($mb_out_dir);
@@ -1244,25 +1287,38 @@ sub get_num_digits {
 sub sec2human {
 	my $secs = shift;
 
+	# Constants
+	my $secs_in_min = 60;
+	my $secs_in_hour = 60 * 60;
+	my $secs_in_day = 24 * 60 * 60;
+
 	$secs = int($secs);
 
 	return "0 seconds" if (!$secs);
 
+	# Calculate units of time
+	my $days = int($secs / $secs_in_day);
+	my $hours = ($secs / $secs_in_hour) % 24;
+	my $mins = ($secs / $secs_in_min) % 60;
+	$secs = $secs % 60;
+
+	# Format return nicely
 	my $time;
-	if (int($secs / (24 * 60 * 60)) > 0) {
-		$time .= (int($secs / (24 * 60 * 60)) > 1).((int($secs / (24 * 60 * 60)) != 1) ? " days, " : " day, ");
+	if ($days) {
+		$time .= ($days != 1) ? "$days days, " : "$days day, ";
 	}
-	if (($secs / (60 * 60)) % 24 > 0) {
-		$time .= (($secs / (60 * 60)) % 24).((($secs / (60 * 60)) % 24 != 1) ? " hours, " : " hour, ");
+	if ($hours) {
+		$time .= ($hours != 1) ? "$hours hours, " : "$hours hour, ";
 	}
-	if (($secs / 60) % 60 > 0) {
-		$time .= (($secs / 60) % 60).(((($secs / 60) % 60) != 1) ? " minutes, " : " minute, ");
+	if ($mins) {
+		$time .= ($mins != 1) ? "$mins minutes, " : "$mins minute, ";
 	}
-	if (($secs % 60) > 0) {
-		$time .= ($secs % 60).((($secs % 60) != 1) ? " seconds " : " second ");
+	if ($secs) {
+		$time .= ($secs != 1) ? "$secs seconds " : "$secs second ";
 	}
 	else {
-		$time .= "0 seconds ";
+		# Remove comma
+		chop($time);
 	}
 	chop($time);
 
@@ -1282,7 +1338,7 @@ sub get_free_cpus {
 	}
 	else {
 		# Linux
-		chomp(@percent_free_cpu = `top -bn2d0.05 | grep "Cpu(s)"`);
+		chomp(@percent_free_cpu = `top -b -n2 -d0.05 | grep "Cpu(s)"`);
 	}
 
 	my $percent_free_cpu = pop(@percent_free_cpu);
@@ -1366,7 +1422,7 @@ sub combine {
 sub check_bucky_version {
 	my $bucky = shift;
 
-	print "Checking for BUCKy version >= 1.4.4...\n";
+	print "\nChecking for BUCKy version >= 1.4.4...\n";
 
 	# Run BUCKy with --version and extract version info
 	chomp(my @version_info = grep { /BUCKy version/ } `bucky --version`);
