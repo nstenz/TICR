@@ -1072,7 +1072,7 @@ sub parse_mbsum_taxa {
 	while (my $line = <$mbsum_file>) {
 		$in_translate_block++ if ($line =~ /translate/);
 
-		if ($in_translate_block == 1 && $line =~ /\d+\s+(\S+)(,|;)?/) {
+		if ($in_translate_block == 1 && $line =~ /\d+\s+([^,;]+)/) {
 			push(@taxa, $1);
 		}
 	}
