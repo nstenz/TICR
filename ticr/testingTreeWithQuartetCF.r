@@ -30,8 +30,9 @@ test.tree.preparation <- function(cf, guidetree){
  # this is modifying guidetree in the current environment only, not in gloval env.
  tax2id <- 1:Ntip; names(tax2id)=guidetree$tip.label
  M = nrow(cf) # number of quartets with data
- for (i in 1:4){ cf[,i] = as.factor(cf[,i]) } # otherwise: bug if names are integers
  dat.names <- as.matrix(cf[,1:4]) # -> taxon names as characters, not factors
+ if (is.numeric(dat.names)) # sometimes names are integers: problem below with indexing
+   dat.names <- matrix(as.character(dat.names),M,4)
  dat.leaves <- matrix(tax2id[dat.names],nrow=M,ncol=4)
  #cat("dat.names: \n"); print(head(dat.names))
  #cat("dat.leaves:\n"); print(head(dat.leaves))
@@ -147,7 +148,7 @@ test.one.species.tree <- function(cf,guidetree,prep,edge.keep,plot=TRUE,shape.co
   # prep = test.tree.preparation(cf,guidetree)
 
   if (any(is.na(guidetree$edge.length[edge.keep])))
-    stop("edges to keep must have a length in the guide tree")
+    stop("edges to keep must have a length (in coalescent units) in the guide tree")
   if (shape.correction)
     add2shape.outlier <- add2shape.alpha <-"adaptive" else
     add2shape.outlier <- add2shape.alpha <- 0
@@ -362,12 +363,15 @@ stepwise.test.tree = function(cf, guidetree, search="both", method="PLL", kbest=
    external.edge <- c(external.edge, root.edges[1])
  }
  internal.edge = (1:nrow(guidetree$edge))[-external.edge]
+ if (any(is.na(guidetree$edge.length[internal.edge])))
+    stop("internal edges need a length (in coalescent units) in the guide tree")
+
  tax2id = 1:Ntip; names(tax2id)=guidetree$tip.label
  M = nrow(cf) # 27405: number of quartets with data
  cf.obs = as.matrix(cf[,5:7])
 
  # if any observed CF == 0.0, change it to some very small value.
- maxBranchLength <- max(maxBranchLength, max(guidetree$edge.length))
+ maxBranchLength <- max(maxBranchLength, max(guidetree$edge.length, na.rm=T))
  minObsCF <- exp(-maxBranchLength)/3 # minimum expected minor CF
  minObsCF <- min(minObsCF, min(cf.obs[cf.obs>0]))
  cf.obs[cf.obs==0] <- minObsCF
@@ -375,6 +379,8 @@ stepwise.test.tree = function(cf, guidetree, search="both", method="PLL", kbest=
  # so the sum of each row should be almost equal to 1 up to rounding error. 
 
  dat.names = as.matrix(cf[,1:4]) # -> taxon names as characters, not factors
+ if (is.numeric(dat.names))      # nor integers
+   dat.names <- matrix(as.character(dat.names),M,4)
  dat.leaves = matrix(tax2id[dat.names],nrow=M,ncol=4)
 
  tab0 = c(.01,.04,.05,.90)                # expected proportions of p-values
@@ -684,6 +690,7 @@ stepwise.test.tree = function(cf, guidetree, search="both", method="PLL", kbest=
   } else {
     chisq.message <- "The chi-square test is not significant:\nthe population tree fits the quartet concordance factors adequately\n"}
   cat(chisq.message)
+  colnames(bestRes1$cf.exp) = paste0("exp",c("CF12.34","CF13.24","CF14.23"))
   return(list(Nedge=Nedge,edges=sort(edge2keep.current),
               notincluded = sort(setdiff(internal.edge,edge2keep.current)),
               alpha=bestRes1$alpha,
