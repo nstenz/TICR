@@ -30,6 +30,7 @@ test.tree.preparation <- function(cf, guidetree){
  # this is modifying guidetree in the current environment only, not in gloval env.
  tax2id <- 1:Ntip; names(tax2id)=guidetree$tip.label
  M = nrow(cf) # number of quartets with data
+ for (i in 1:4){ cf[,i] = as.factor(cf[,i]) } # otherwise: bug if names are integers
  dat.names <- as.matrix(cf[,1:4]) # -> taxon names as characters, not factors
  dat.leaves <- matrix(tax2id[dat.names],nrow=M,ncol=4)
  #cat("dat.names: \n"); print(head(dat.names))
@@ -145,6 +146,8 @@ test.one.species.tree <- function(cf,guidetree,prep,edge.keep,plot=TRUE,shape.co
   # so it's best to do it once and re-use it multiple times later:
   # prep = test.tree.preparation(cf,guidetree)
 
+  if (any(is.na(guidetree$edge.length[edge.keep])))
+    stop("edges to keep must have a length in the guide tree")
   if (shape.correction)
     add2shape.outlier <- add2shape.alpha <-"adaptive" else
     add2shape.outlier <- add2shape.alpha <- 0
@@ -175,7 +178,7 @@ test.one.species.tree <- function(cf,guidetree,prep,edge.keep,plot=TRUE,shape.co
   cf.obs = as.matrix(cf[,5:7])
 
   # if any observed CF == 0.0, change it to some very small value, to take log later
-  maxBranchLength <- max(maxBranchLength, max(guidetree$edge.length))
+  maxBranchLength <- max(maxBranchLength, max(guidetree$edge.length, na.rm=T))
   minObsCF <- exp(-maxBranchLength)/3 # minimum expected minor CF
   minObsCF <- min(minObsCF, min(cf.obs[cf.obs>0]))
   cf.obs[cf.obs==0] <- minObsCF
@@ -301,6 +304,7 @@ test.one.species.tree <- function(cf,guidetree,prep,edge.keep,plot=TRUE,shape.co
   } else {
     chisq.message <- "The chi-square test is not significant:\nthe population tree fits the quartet concordance factors adequately\n"}
   cat(chisq.message)
+  colnames(cf.exp) = paste0("exp",c("CF12.34","CF13.24","CF14.23"))
   # return tk as well? can be obtained from cf.exp
   return(list(alpha=alpha,minus.pll=minus.pll,X2=as.numeric(res$statistic),chisq.pval=res$p.value,
               chisq.conclusion=chisq.message,
