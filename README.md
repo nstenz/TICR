@@ -5,9 +5,7 @@ If you use the method and for details, please cite
   Exploring tree-like and non-tree-like patterns using genome sequences:
   An example using the inbreeding plant species *Arabidopsis thaliana* (L.) Heynh.
   Systematic Biology, 64(5):809-823.
-* links: [abstract](http://sysbio.oxfordjournals.org/cgi/content/abstract/syv039?ijkey=PGiptM62iGhH0zu&keytype=ref)
-  and
-  [pdf](http://sysbio.oxfordjournals.org/cgi/reprint/syv039?ijkey=PGiptM62iGhH0zu&keytype=ref)
+  [doi: 10.1093/sysbio/syv039](https://doi.org/10.1093/sysbio/syv039)
 * [addendum](http://www.stat.wisc.edu/~ane/publis/2015Stenz_TICR_addendum.pdf) describing a modification 
   to the model in the original TICR test. 
 
