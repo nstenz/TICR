@@ -858,31 +858,31 @@ sub dump_quartets {
 		}
 
 		# Check if this is the first to complete, if so we must create BUCKy tarball
-		if (!-e "../$bucky_archive") {
-			system("tar", "cf", "../$bucky_archive", @completed_quartets);
-			unlink(@completed_quartets);
-		}
-		else {
-			my @unlink;
-			foreach my $completed_quartet (@completed_quartets) {
-				(my $quartet = $completed_quartet) =~ s/\.tar\.gz//;
-				push(@unlink, glob("$quartet*"));
-			}
-			#$SIG{TERM} = sub { close(STDIN); close(STDOUT); close(STDERR); unlink(glob("$quartet*")); exit(0); };
-			#$SIG{TERM} = sub { close(STDIN); close(STDOUT); close(STDERR); unlink(@unlink); exit(0); };
+		# if (!-e "../$bucky_archive") {
+		# 	system("tar", "cf", "../$bucky_archive", @completed_quartets);
+		# 	unlink(@completed_quartets);
+		# }
+		# else {
+		# 	my @unlink;
+		# 	foreach my $completed_quartet (@completed_quartets) {
+		# 		(my $quartet = $completed_quartet) =~ s/\.tar\.gz//;
+		# 		push(@unlink, glob("$quartet*"));
+		# 	}
+		# 	#$SIG{TERM} = sub { close(STDIN); close(STDOUT); close(STDERR); unlink(glob("$quartet*")); exit(0); };
+		# 	#$SIG{TERM} = sub { close(STDIN); close(STDOUT); close(STDERR); unlink(@unlink); exit(0); };
 
-			# Obtain a file lock on archive so another process doesn't simultaneously try to add to it
-			open(my $bucky_archive_file, "<", "../$bucky_archive");
-			flock($bucky_archive_file, LOCK_EX) || die "Could not lock '$bucky_archive': $!.\n";
+		# 	# Obtain a file lock on archive so another process doesn't simultaneously try to add to it
+		# 	open(my $bucky_archive_file, "<", "../$bucky_archive");
+		# 	flock($bucky_archive_file, LOCK_EX) || die "Could not lock '$bucky_archive': $!.\n";
 
-			# Add completed gene
-			system("tar", "rf", "../$bucky_archive", @completed_quartets);
-			unlink(@completed_quartets);
+		# 	# Add completed gene
+		# 	system("tar", "rf", "../$bucky_archive", @completed_quartets);
+		# 	unlink(@completed_quartets);
 
-			# Release lock
-			flock($bucky_archive_file, LOCK_UN) || die "Could not unlock '$bucky_archive': $!.\n";
-			close($bucky_archive_file);
-		}
+		# 	# Release lock
+		# 	flock($bucky_archive_file, LOCK_UN) || die "Could not unlock '$bucky_archive': $!.\n";
+		# 	close($bucky_archive_file);
+		# }
 
 		unlink(@unlink);
 		undef(@unlink);
