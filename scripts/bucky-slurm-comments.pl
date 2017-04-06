@@ -12,80 +12,138 @@ use POSIX qw(ceil :sys_wait_h);
 use File::Path qw(remove_tree);
 use Time::HiRes qw(time usleep);
 
+# Get OS name
+my $os_name = $^O;
+
+# Turn on autoflush
+$|++;
+
+# Max number of forks to use
+my $max_forks = get_free_cpus();
+
+# Server port
+my $port = 10003;
+
+# Stores executing machine hostnames
+my @machines;
+my %machines;
+
+# Path to text file containing computers to run on
+my $machine_file_path;
+
+# MrBayes block which will be used for each run
+my $mb_block;
+
+# Where this script is located 
+my $script_path = abs_path($0);
+
+# Directory script was called from
+my $init_dir = abs_path(".");
+
+# Where the script was called from
+my $initial_directory = $ENV{PWD};
+
+# General script settings
+my $no_forks;
+
+# Allow for reusing info from an old run
+my $input_is_dir = 0;
+
+# Allow user to specify mbsum output as input for the script
+my $input_is_mbsum = 0;
+
 # How the script was called
-my $invocation = "perl bucky-slurm.pl @ARGV";
+my $invocation = "perl bucky.pl @ARGV";
+
 # Name of output directory
 my $project_name = "bucky-".int(time());
+#my $project_name = "bucky-dir";
+
 # BUCKy settings
 my $alpha = 1;
 my $ngen = 1000000;
 
+my @unlink;
+
 # Read commandline settings
 GetOptions(
+	"no-forks"          => \$no_forks,
+	"machine-file=s"    => \$machine_file_path,
 	"alpha|a=s"         => \$alpha,
 	"ngen|n=i"          => \$ngen,
+	"port=i"            => \$port,
+	"no-mbsum|s"        => \$input_is_mbsum,
+	"n-threads|T=i"     => \$max_forks,
 	"out-dir|o=s"       => \$project_name,
+	"server-ip=s"       => \&client, # for internal usage only
 	"help|h"            => sub { print &help; exit(0); },
 	"usage"             => sub { print &usage; exit(0); },
 );
 
 
-## fixit: add this check
 # Get paths to required executables
-#my $bucky = check_path_for_exec("bucky");
-# Check that BUCKy version >= 1.4.4
-#check_bucky_version($bucky);
+my $bucky = check_path_for_exec("bucky");
+my $mbsum = check_path_for_exec("mbsum") if (!$input_is_mbsum);
 
-## this is the mbsum folder with files gene?.in
+# Check that BUCKy version >= 1.4.4
+check_bucky_version($bucky);
+
 my $archive = shift(@ARGV);
 
 # Some error checking
 die "You must specify an archive file.\n\n", &usage if (!defined($archive));
 die "Could not locate '$archive', perhaps you made a typo.\n" if (!-e $archive);
+die "Could not locate '$machine_file_path'.\n" if (defined($machine_file_path) && !-e $machine_file_path);
 die "Invalid alpha for BUCKy specified, input must be a float or 'infinity'.\n" if ($alpha !~ /(^inf(inity)?)|(^\d+(\.\d+)?$)/i);
+
+# Input is a previous run directory, reuse information
+$input_is_dir++ if (-d $archive);
+
+# Determine which machines we will run the analyses on
+if (defined($machine_file_path)) {
+
+	# Get list of machines
+	print "Fetching machine names listed in '$machine_file_path'...\n";
+	open(my $machine_file, '<', $machine_file_path);
+	chomp(@machines = <$machine_file>);
+	close($machine_file);
+
+	# Check that we can connect to specified machines
+	foreach my $index (0 .. $#machines) {
+		my $machine = $machines[$index];
+		print "  Testing connection to: $machine...\n";
+
+		# Attempt to ssh onto machine with a five second timeout
+		my $ssh_test = `timeout 5 ssh -v $machine exit 2>&1`;
+
+		# Look for machine's IP in test connection
+		my $machine_ip;
+		if ($ssh_test =~ /Connecting to \S+ \[(\S+)\] port \d+\./s) {
+			$machine_ip = $1;
+		}
+
+		# Could connect but passwordless login not enabled
+		if ($ssh_test =~ /Are you sure you want to continue connecting \(yes\/no\)/s) {
+			print "    Connection to $machine failed, removing from list of useable machines (passwordless login not enabled).\n";
+			splice(@machines, $index, 1);
+		}
+		# Successful connection
+		elsif (defined($machine_ip)) {
+			print "    Connection to $machine [$machine_ip] successful.\n";
+			$machines{$machine} = $machine_ip;
+		}
+		# Unsuccessful connection
+		else {
+			print "    Connection to $machine failed, removing from list of useable machines.\n";
+			splice(@machines, $index, 1);
+		}
+	}
+}
 
 print "\nScript was called as follows:\n$invocation\n\n";
 
-## bucky is run in the *.in files of mbsum.
-
-# Run BUCKy on specified quartet
-## CF cutoff for display          | -cf number                 | 0.05
-## taxon set                      | -p prune-file              | common taxa
-## output root file name          | -o name                    | run1
-
-# Create prune tree file contents required for BUCKy
-my $count = 0;
-my $prune_tree_output = "translate\n";
-foreach my $member (split("--", $quartet)) {
-    $count++;
-    $prune_tree_output .= " $count $member";
-    if ($count == 4) {
-	$prune_tree_output .= ";\n";
-    }
-    else {
-	$prune_tree_output .= ",\n";
-    }
-}
-# Write prune tree file
-my $prune_file_path = "$quartet-prune.txt";
-
-push(@unlink, $prune_file_path);
-
-open(my $prune_file, ">", $prune_file_path);
-print {$prune_file} $prune_tree_output;
-close($prune_file);
-
-
-system($bucky, split(" ", $bucky_settings), "-cf", 0, "-o", $quartet, "-p", $prune_file_path, @sums);
-
-## aqui voy: tengo q entender los arguments con los q se esta llamando bucky, el input, y correrlo con el mbsum folder in Desktop
-## q hace -p? ya no tenemos q cambiar los mbsum files by hand?
-## primero vemos como se corre cuando nosotros le damos el quartet, exactamente en este mismo formato
-## luego tenemos q pensar q mas bien vamos a dar un integer y encontrar el quartet adentro, checar q no se haya corrido ya: ejemplo: todo dentro de un IF
-
-__END__
-
-
+my $archive_root;
+my $archive_root_no_ext;
 if (!$input_is_dir) {
 
 	# Clean run with no prior output
