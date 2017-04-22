@@ -1,4 +1,7 @@
 #!/usr/bin/perl
+## should be called:
+## perl bucky-slurm.pl mbsum-folder -a alpha -n num-gen -q quartet-index
+
 use strict;
 use warnings;
 use POSIX;
@@ -19,22 +22,24 @@ my $project_name = "bucky-".int(time());
 # BUCKy settings
 my $alpha = 1;
 my $ngen = 1000000;
+my $qind = 1;
 
 # Read commandline settings
 GetOptions(
 	"alpha|a=s"         => \$alpha,
 	"ngen|n=i"          => \$ngen,
+	"quartet|q=i"          => \$qind,
 	"out-dir|o=s"       => \$project_name,
 	"help|h"            => sub { print &help; exit(0); },
 	"usage"             => sub { print &usage; exit(0); },
 );
 
 
-## fixit: add this check
+## fixit: maybe we do not want to check this in every bucky, but how to do only once?
 # Get paths to required executables
-#my $bucky = check_path_for_exec("bucky");
+my $bucky = check_path_for_exec("bucky");
 # Check that BUCKy version >= 1.4.4
-#check_bucky_version($bucky);
+check_bucky_version($bucky);
 
 ## this is the mbsum folder with files gene?.in
 my $archive = shift(@ARGV);
@@ -46,6 +51,196 @@ die "Invalid alpha for BUCKy specified, input must be a float or 'infinity'.\n" 
 
 print "\nScript was called as follows:\n$invocation\n\n";
 
+opendir(BIN, $archive) or die "Can't open $archive: $!";
+my @genes = grep { -T "$archive/$_" } readdir BIN;
+
+# Parse taxa present in each gene, determine which are shared across all genes
+my %taxa;
+my @taxa;
+foreach my $gene (@genes) {
+    my @taxa = @{parse_mbsum_taxa("${archive}/$gene")};
+
+    # Count taxa present
+    foreach my $taxon (@taxa) {
+	$taxa{$taxon}++;
+    }
+}
+
+## aqui hay q cambiar para q deje taxa q no esta en algunos genes: q porcentaje?
+# Add taxa present in all genes to analysis
+foreach my $taxon (keys %taxa) {
+    if ($taxa{$taxon} == scalar(@genes)) {
+	push(@taxa, $taxon);
+    }
+}
+
+my $ntax = scalar keys %taxa;
+print "Read $ntax taxa\n";
+my @quartet = whichQuartet($qind,$ntax);
+print "Calling BUCKy on the quartet: @quartet\n";
+
+## aqui voy: ya nada mas hay q llamar bucky, esta abajo de END
+
+sub parse_mbsum_taxa {
+	my $mbsum_file_name = shift;
+
+	# Open the specified mbsum file and parse its taxa list
+
+	my @taxa;
+	my $in_translate_block = 0;
+	open(my $mbsum_file, "<", $mbsum_file_name);
+	while (my $line = <$mbsum_file>) {
+		$in_translate_block++ if ($line =~ /translate/);
+
+		if ($in_translate_block == 1 && $line =~ /\d+\s+([^,;]+)/) {
+			push(@taxa, $1);
+		}
+	}
+	close($mbsum_file);
+
+	# Check if there were multiple translate blocks in the file which is indicative of an error with the creation of the file
+	die "Something is amiss with '$mbsum_file_name', multiple translate blocks ($in_translate_block) were detected when there should only be one.\n" if ($in_translate_block > 1);
+
+	# Check that we actually parsed something, otherwise input is improperly formatted/not mbsum output
+	die "No taxa parsed for file '$mbsum_file_name', does '$archive' actually contain mbsum output?.\n" if (!@taxa);
+
+	return \@taxa;
+}
+
+sub combination { ##http://stackoverflow.com/questions/10406411/efficient-inline-implementation-of-nck-in-perl
+    my( $n, $r ) = @_;
+    return unless defined $n && $n =~ /^\d+$/ && defined $r && $r =~ /^\d+$/;
+    my $product = 1;
+    while( $r > 0 ) {
+        $product *= $n--;
+        $product /= $r--;
+    }
+    return $product;
+}
+
+sub whichQuartet {
+    my $q = shift;
+    my $n = shift;
+    my $p = 4;
+    die "  Error: number of taxa must be greater than 4.\n" if ($n<=4);
+    my @quartet;
+    while($n > 1)
+    {
+        my $abs = combination($n-1,$p); #fixit: we don't want to compute this, we want to look for it in a table
+	if($q > $abs)
+	{
+	    push @quartet, $n;
+	    $n = $n-1;
+	    $p = $p-1;
+	    $q = $q-$abs;
+	}
+	else
+	{
+	    $n = $n - 1;
+	}
+    }
+    if(scalar @quartet == 3)
+    {
+	push @quartet, 1;
+    }
+    return sort @quartet;
+}
+
+sub usage {
+	return "Usage: bucky.pl [MRBAYES TARBALL]\n";
+}
+
+sub help {
+print <<EOF;
+@{[usage()]}
+Execution of BUCKy for one given quartet in a given alignment
+
+  -a, --alpha            value of alpha to use when running BUCKy, use "infinity" for infinity (default: 1)
+  -n, --ngen             number of generations to run BUCKy MCMC chain (default: 1000000 generations)
+  -o, --out-dir          name of the directory to store output files in (default: "bucky-" + Unix time of script invocation)
+  -q, --quartet          quartet index
+  -h, --help             display this help and exit
+  --usage                display proper script invocation format
+
+Examples:
+  perl bucky.pl mbsum-folder     runs BUCKy using mbsum output stored in the mbsum folder
+
+Mail bug reports and suggestions to issues in github.com/TICR
+EOF
+exit(0);
+}
+
+sub check_bucky_version {
+	my $bucky = shift;
+
+	print "\nChecking for BUCKy version >= 1.4.4...\n";
+
+	# Run BUCKy with --version and extract version info
+	chomp(my @version_info = grep { /BUCKy version/ } `bucky --version`);
+	my $version_info = shift(@version_info);
+
+	die "  Could not determine BUCKy version.\n" if (!defined($version_info));
+
+	# Get the actual version number
+	my $version;
+	if ($version_info =~ /BUCKy\s+version\s+([^\s|,]+)/) {
+		$version = $1;
+	}
+	die "  Could not determine BUCKy version.\n" if (!defined($version_info));
+
+	# Version testing
+	#my @versions = qw/2.1b 1.2.1000 1 0.9.8 2.3 1.4.5 1.4.3 1.4 1.500.2 1.4.4 1.4.4.1/;
+	#foreach my $version (@versions) {
+
+	print "  BUCKy version: $version.\n";
+
+	# Split version number based on period delimiters
+	my @version_parts = split(/\./, $version);
+
+	# Future proofing if letters are ever used (we won't ever care about them)
+	@version_parts = map { s/[a-zA-Z]+//g; $_ } @version_parts;
+	die "  Error determining BUCKy version.\n" if (!@version_parts);
+
+	# Check that version is >= 1.4.4
+	if (defined($version_parts[0]) && $version_parts[0] > 1) {
+		print "  BUCKy version check passed.\n";
+		return;
+	}
+	elsif ((defined($version_parts[0]) && $version_parts[0] == 1) && (defined($version_parts[1]) && $version_parts[1] > 4)) {
+		print "  BUCKy version check passed.\n";
+		return;
+	}
+	elsif (((defined($version_parts[0]) && $version_parts[0] == 1) && (defined($version_parts[1]) && $version_parts[1] == 4))
+		  && defined($version_parts[2]) && $version_parts[2] >= 4) {
+		print "  BUCKy version check passed.\n";
+		return;
+	}
+	else {
+		die "  BUCKy version check failed, update to version >= 1.4.4.\n";
+	}
+
+	#print "\n";
+	#}
+}
+
+sub check_path_for_exec {
+	my $exec = shift;
+
+	my $path = $ENV{PATH}.":."; # include current directory as well
+	my @path_dirs = split(":", $path);
+
+	my $exec_path;
+	foreach my $dir (@path_dirs) {
+		$dir .= "/" if ($dir !~ /\/$/);
+		$exec_path = abs_path($dir.$exec) if (-e $dir.$exec && -x $dir.$exec && !-d $dir.$exec);
+	}
+
+	die "Could not find the following executable: '$exec'. This script requires this program in your path.\n" if (!defined($exec_path));
+	return $exec_path;
+}
+
+
+__END__
 ## bucky is run in the *.in files of mbsum.
 
 # Run BUCKy on specified quartet
@@ -169,7 +364,7 @@ if (-e $bucky_archive && -e $quartet_output) {
 
 	# Because it takes longer to append to a tarball than append to a text file, the tarball most
 	# likely has fewer quartet entries in it, we must therefore account for this ensuring that
-	# the tarball and csv have the same quartet entries 
+	# the tarball and csv have the same quartet entries
 
 	# See which quartets in the tarball are complete
 	chomp(my @complete_quartets_tarball = `tar tf '$init_dir/$project_name/$bucky_archive'`);
@@ -212,7 +407,7 @@ my @genes;
 ## clau: this first part is preprocessing of needed input data
 if ($input_is_mbsum) { ## if mbsum is provided instead of mrbayes output
 
-	# Unarchive input genes 
+	# Unarchive input genes
 	chomp(@genes = `tar xvf '$init_dir/$project_name/$archive' -C $mb_sum_dir 2>&1`);
 	@genes = map { s/x //; $_ } @genes if ($os_name eq "darwin");
 
@@ -256,7 +451,7 @@ if ($input_is_mbsum) { ## if mbsum is provided instead of mrbayes output
 			$taxa{$taxon}++;
 		}
 	}
-	
+
 	# Add taxa present in all genes to analysis
 	foreach my $taxon (keys %taxa) {
 		if ($taxa{$taxon} == scalar(@genes)) {
@@ -269,7 +464,7 @@ if ($input_is_mbsum) { ## if mbsum is provided instead of mrbayes output
 }
 else { ## clau: if mrbayes output was provided
 
-	# Unarchive input genes 
+	# Unarchive input genes
 	chomp(@genes = `tar xvf '$init_dir/$archive' -C '$mb_out_dir' 2>&1`);
 	@genes = map { s/x //; $_ } @genes if ($os_name eq "darwin");
 
@@ -416,7 +611,7 @@ my $sock = IO::Socket::INET->new(
 	Blocking   => 0,
 	Reuse      => 1,
 	Listen     => SOMAXCONN,
-	Proto      => 'tcp') 
+	Proto      => 'tcp')
 or die "Could not create server socket: $!.\n";
 $sock->autoflush(1);
 
@@ -440,7 +635,7 @@ my @pids;
 foreach my $machine (@machines) {
 
 	# Fork and create a client on the given machine
-	my $pid = fork();	
+	my $pid = fork();
 	if ($pid == 0) {
 		close(STDIN);
 		close(STDOUT);
@@ -492,7 +687,7 @@ chdir($mb_sum_dir);
 
 my $select = IO::Select->new($sock);
 
-# Stores which job is next in queue 
+# Stores which job is next in queue
 my $job_number = 0;
 
 # Number of open connections to a client
@@ -550,12 +745,12 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 			# Client wants to send us a file
 			if ($response =~ /SEND_FILE: (.*)/) {
 				my $file_name = $1;
-				receive_file({'FILE_PATH' => $file_name, 'FILE_HANDLE' => $client});	
+				receive_file({'FILE_PATH' => $file_name, 'FILE_HANDLE' => $client});
 			}
 
 			# Client has finished a job
 			if ($response =~ /DONE '(.*)' '(.*)' \|\|/) {
-				$complete_count++;				
+				$complete_count++;
 				printf("  Analyses complete: %".$num_digits."d/%d.\r", $complete_count, scalar(@quartets));
 
 				my $completed_quartet = $1;
@@ -617,7 +812,7 @@ print "Total execution time: ", sec2human(time() - $time), ".\n\n";
 rmdir("$initial_directory/$project_name/$mb_sum_dir");
 
 sub client { ## clau: this calls bucky, I think
-	my ($opt_name, $address) = @_;	
+	my ($opt_name, $address) = @_;
 
 	my ($server_ip, $port) = split(":", $address);
 
@@ -628,7 +823,7 @@ sub client { ## clau: this calls bucky, I think
 	setpgrp();
 
 	# Determine this host's IP
-	chomp(my $ip = `dig +short myip.opendns.com \@resolver1.opendns.com`); 
+	chomp(my $ip = `dig +short myip.opendns.com \@resolver1.opendns.com`);
 
 	# Set IP to localhost if we don't have internet
 	if ($ip !~ /(?:[0-9]{1,3}\.){3}[0-9]{1,3}/) {
@@ -652,8 +847,8 @@ sub client { ## clau: this calls bucky, I think
 
 	# Spawn more clients
 	my @pids;
-	my $total_forks = get_free_cpus(); 
-	#my $total_forks = 1; 
+	my $total_forks = get_free_cpus();
+	#my $total_forks = 1;
 	if ($total_forks > 1) {
 		foreach my $fork (1 .. $total_forks - 1) {
 			my $pid = fork();
@@ -679,8 +874,8 @@ sub client { ## clau: this calls bucky, I think
 	# Connect to the server
 	my $sock = new IO::Socket::INET(
 		PeerAddr  => $server_ip.":".$port,
-		Proto => 'tcp') 
-	or exit(0); 
+		Proto => 'tcp')
+	or exit(0);
 	$sock->autoflush(1);
 
 	print {$sock} "NEW: $ip\n";
@@ -738,7 +933,7 @@ sub client { ## clau: this calls bucky, I think
 
 			# Send the results back to the server if this is a remote client
 			if ($server_ip ne "127.0.0.1" && $server_ip ne $ip) {
-				send_file({'FILE_PATH' => $quartet_archive_name, 'FILE_HANDLE' => $sock});	
+				send_file({'FILE_PATH' => $quartet_archive_name, 'FILE_HANDLE' => $sock});
 				unlink($quartet_archive_name);
 			}
 
@@ -891,14 +1086,14 @@ sub parse_concordance_output {
 				my $taxon = $1;
 				my $line_end = $2;
 				push(@taxa, $taxon);
-				
+
 				$in_translate = 0 if ($line_end eq ';');
 			}
 		}
 
 		# Parse the split information
 		if ($in_all_splits) {
-			
+
 			# Set the split we are parsing information from
 			if ($line =~ /^(\{\S+\})/) {
 				my $current_split = $1;
@@ -918,7 +1113,7 @@ sub parse_concordance_output {
 				$splits{$split}->{"CF"} = $1 / $ngenes;
 			}
 
-			# Parse 95% confidence interval 
+			# Parse 95% confidence interval
 			if ($line =~ /95% CI for CF = \((\d+),(\d+)\)/) {
 				#$splits{$split}->{"95%_CI"} = "(".($1 / $ngenes).",".($2 / $ngenes).")";
 				$splits{$split}->{"95%_CI_LO"} = ($1 / $ngenes);
@@ -1007,7 +1202,7 @@ sub parse_mb_log {
 		return {'SAMPLEFREQ' => $samplefreq, 'NRUNS' => $nruns, 'BURNIN' => $burnin, 'TAXA' => \@taxa};
 	}
 	else {
-		return {'NGEN' => $ngen, 'NRUNS' => $nruns, 'BURNINFRAC' => $burninfrac, 
+		return {'NGEN' => $ngen, 'NRUNS' => $nruns, 'BURNINFRAC' => $burninfrac,
 				'SAMPLEFREQ' => $samplefreq, 'TAXA' => \@taxa};
 	}
 }
@@ -1177,7 +1372,7 @@ sub INT_handler {
 	#dump_quartets(\%complete_queue);
 
 	unlink(@unlink);
-	
+
 	# Kill ssh process(es) spawned by this script
 	foreach my $pid (@pids) {
 		#kill(-9, $pid);
@@ -1232,7 +1427,7 @@ sub get_num_digits {
 		$digits++;
 	}
 
-	return $digits;	
+	return $digits;
 }
 
 sub sec2human {
@@ -1299,8 +1494,8 @@ sub get_free_cpus {
 		$percent_free_cpu =~ s/.*?(\d+\.\d+)%\s+id.*/$1/;
 	}
 	else {
-		# linux 
-		$percent_free_cpu =~ s/.*?(\d+\.\d)\s*%?ni,\s*(\d+\.\d)\s*%?id.*/$1 + $2/; # also includes %nice as free 
+		# linux
+		$percent_free_cpu =~ s/.*?(\d+\.\d)\s*%?ni,\s*(\d+\.\d)\s*%?id.*/$1 + $2/; # also includes %nice as free
 		$percent_free_cpu = eval($percent_free_cpu);
 	}
 
@@ -1319,7 +1514,7 @@ sub get_free_cpus {
 	if ($free_cpus == 0 || $free_cpus !~ /^\d+$/) {
 		$free_cpus = 1; # assume that at least one cpu can be used
 	}
-	
+
 	return $free_cpus;
 }
 
@@ -1337,7 +1532,7 @@ sub run_cmd {
 
 sub check_path_for_exec {
 	my $exec = shift;
-	
+
 	my $path = $ENV{PATH}.":."; # include current directory as well
 	my @path_dirs = split(":", $path);
 
@@ -1410,7 +1605,7 @@ sub check_bucky_version {
 		print "  BUCKy version check passed.\n";
 		return;
 	}
-	elsif (((defined($version_parts[0]) && $version_parts[0] == 1) && (defined($version_parts[1]) && $version_parts[1] == 4)) 
+	elsif (((defined($version_parts[0]) && $version_parts[0] == 1) && (defined($version_parts[1]) && $version_parts[1] == 4))
 		  && defined($version_parts[2]) && $version_parts[2] >= 4) {
 		print "  BUCKy version check passed.\n";
 		return;
@@ -1427,27 +1622,3 @@ sub usage {
 	return "Usage: bucky.pl [MRBAYES TARBALL]\n";
 }
 
-sub help {
-print <<EOF; 
-@{[usage()]}
-Parallel execution of BUCKy on all possible quartets in a given alignment
-
-  -a, --alpha            value of alpha to use when running BUCKy, use "infinity" for infinity (default: 1)      
-  -n, --ngen             number of generations to run BUCKy MCMC chain (default: 1000000 generations)
-  -o, --out-dir          name of the directory to store output files in (default: "bucky-" + Unix time of script invocation)
-  -T, --n-threads        the number of forks ALL hosts running analyses can use concurrently (default: current number of free CPUs)
-  -s, --no-mbsum         informs the script that the input is a tarball containing output already parsed by mbsum
-  --machine-file         file name containing hosts to ssh onto and perform analyses on, passwordless login MUST be enabled
-                         for each host specified in this file
-  --port                 specifies the port to utilize on the server (Default: 10003)
-  -h, --help             display this help and exit
-  --usage                display proper script invocation format
-
-Examples:
-  perl bucky.pl align.mb.tar --machine-file hosts.txt     runs BUCKy using computers specified in hosts.txt using MrBayes output
-                                                          stored in align.mb.tar
-
-Mail bug reports and suggestions to <noah.stenz.github\@gmail.com>
-EOF
-exit(0);
-}
