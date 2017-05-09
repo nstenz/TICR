@@ -10,7 +10,7 @@
 # Claudia: save at the end an Rda file with most important objects
 
 library(ape)
-source("../ticr/testingTreeWithQuartetCF.r")
+source("testingTreeWithQuartetCF.r")
 
 filename.root <- "chr4-subset"
 args <- commandArgs(TRUE)
