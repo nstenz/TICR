@@ -5,6 +5,8 @@
 ## things to do (fixit):
 ## - how many genes are acceptable per quartet?
 ## - what happens if a quartet has 0 genes? what does bucky do?
+## - we do not want to do the translate table over and over, so this script 
+##   should check if it exists
 
 use strict;
 use warnings;
@@ -58,8 +60,8 @@ print "\nScript was called as follows:\n$invocation\n\n";
 opendir(BIN, $archive) or die "Can't open $archive: $!";
 my @genes = grep { -T "$archive/$_" } readdir BIN;
 
-# Parse taxa present in each gene, determine which are shared across all genes
-## create a file with all taxa: and then each script will check if this file exists, or not.
+# Parse taxa present in each gene
+## fixit: create a file with all taxa: and then each script will check if this file exists, or not.
 my %taxa;
 foreach my $gene (@genes) {
     my @taxa = @{parse_mbsum_taxa("${archive}/$gene")};
