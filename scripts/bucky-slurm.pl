@@ -1,6 +1,10 @@
 #!/usr/bin/perl
 ## should be called:
 ## perl bucky-slurm.pl mbsum-folder -a alpha -n num-gen -q quartet-index -o output
+## to test: perl bucky-slurm.pl mbsum -q 1
+## things to do (fixit):
+## - how many genes are acceptable per quartet?
+## - what happens if a quartet has 0 genes? what does bucky do?
 
 use strict;
 use warnings;
@@ -55,6 +59,7 @@ opendir(BIN, $archive) or die "Can't open $archive: $!";
 my @genes = grep { -T "$archive/$_" } readdir BIN;
 
 # Parse taxa present in each gene, determine which are shared across all genes
+## create a file with all taxa: and then each script will check if this file exists, or not.
 my %taxa;
 foreach my $gene (@genes) {
     my @taxa = @{parse_mbsum_taxa("${archive}/$gene")};
@@ -66,13 +71,14 @@ foreach my $gene (@genes) {
 }
 
 
-## cecile: aqui hay q cambiar para q deje taxa q no esta en algunos genes: q porcentaje?
-# Add taxa present in all genes to analysis
+
+# Instead of keeping only taxa that are shared in all genes, 
+# we keep all taxa
 my @taxa;
 foreach my $taxon (keys %taxa) {
-    if ($taxa{$taxon} == scalar(@genes)) {
+    #if ($taxa{$taxon} == scalar(@genes)) {
 	push(@taxa, $taxon);
-    }
+    #}
 }
 
 @taxa = sort @taxa;
@@ -81,13 +87,12 @@ my $ntax = scalar @taxa;
 print "Read $ntax taxa\n";
 my @quartet = whichQuartet($qind,$ntax);
 
-# Check if prune tree file exists
-## cecile/mike: all output files saved on same location to check this?
-## maybe we want to check concordance file? but see question below: concordance or tar?
+# Check if concordance file exists
 my $qscal = join("-", @quartet);
-my $prune_file_path = "$qscal--prune.txt";
+my $concordance_file = "$qscal.concordance";
 
-if(-e $prune_file_path){
+## check also that the file is not empty
+if(-e $concordance_file){
     print "BUCKy already run on this quartet: @quartet so nothing more to do\n";
     exit;
 }
@@ -108,6 +113,7 @@ foreach my $member (@quartet) {
     }
 }
 
+my $prune_file_path = "$qscal--prune.txt";
 open(my $prune_file, ">", $prune_file_path);
 print {$prune_file} $prune_tree_output;
 close($prune_file);
@@ -125,19 +131,26 @@ system($cmd);
 #### Parsing output ####
 # Open concordance file and parse out the three possible resolutions
 my $num_genes = get_used_genes("$qscal.out");
-my $split_info = parse_concordance_output("$qscal.concordance", $num_genes);
-# cecile/mike: do we want to parse to a csv file? do we want to save as a file (one per quartet) and then combine
-# related: project_name never used here
+my $keepQuartet = 1;
+if($num_genes < 2){ ## fixit: how many genes is good enough?
+    print "Quartet CF $qscal were estimated with only $num_genes, will skip this quartet\n";
+    $keepQuartet = 0;
+}
 
-# # Archive and compress results
-# cecile: do we want to tar the concordance file, or just keep it?
-# my $quartet_archive_name = "$qscal.tar.gz";
-# system("tar", "czf", $quartet_archive_name, @results);
+if($keepQuartet){
+    my $split_info = parse_concordance_output("$qscal.concordance", $num_genes);
+    my $CFinfo_file = "$qscal.cf";
+    open(my $CF_stream, ">", $CFinfo_file);
+    print {$CF_stream} $split_info;
+    close($CF_stream);
+    print $split_info;
+    print "\n";
+}
 
-# # Delete extra output files
-# my @results2delete = ("$qscal.cluster", "$qscal.gene", "$qscal.input", "$qscal.out");
-# unlink(@unlink);
-# undef(@unlink);
+# Delete extra output files
+my @unlink = ("$qscal.cluster", "$qscal.gene", "$qscal.input", "$qscal.out", "$prune_file_path");
+unlink(@unlink);
+undef(@unlink);
 
 sub get_used_genes {
 	my $file_name = shift;
