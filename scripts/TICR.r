@@ -30,7 +30,7 @@ zz <- file(output.filename, open="wt")
 sink(zz)
 sink(zz, type="message")
 
-tmp <- c(paste0("taxon",1:4),"CF12.34","CF13.24","CF14.23")
+tmp <- c(paste0("taxon",1:4),"CF12_34","CF13_24","CF14_23")
 # tmp = names of columns to extract
 dat <- read.csv(buckyCF.filename)[,tmp]
 if (ncol(dat) != 7)

@@ -834,7 +834,7 @@ sub dump_quartets {
 		# Check if this is the first to complete, if so we must create CF output file
 		if (!-e "../$quartet_output") {
 			open(my $quartet_output_file, ">", "../$quartet_output");
-			print {$quartet_output_file} "taxon1,taxon2,taxon3,taxon4,CF12.34,CF12.34_lo,CF12.34_hi,CF13.24,CF13.24_lo,CF13.24_hi,CF14.23,CF14.23_lo,CF14.23_hi,ngenes\n";
+			print {$quartet_output_file} "taxon1,taxon2,taxon3,taxon4,CF12_34,CF12_34_lo,CF12_34_hi,CF13_24,CF13_24_lo,CF13_24_hi,CF14_23,CF14_23_lo,CF14_23_hi,ngenes\n";
 			foreach my $quartet (@quartet_statistics) {
 				print {$quartet_output_file} $quartet,"\n";
 			}
