@@ -324,7 +324,7 @@ sub whichQuartet {
 	    push @quartet, $n;
 	    $n = $n-1;
 	    $p = $p-1;
-	    $q = $q-$abs;
+	    $q = int($q-$abs);
 	}
 	else
 	{
