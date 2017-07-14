@@ -319,16 +319,10 @@ sub whichQuartet {
     my @quartet;
     while($n > 1)
     {
-	print "-----\n";
-	print "n = $n \n";
-	print "q = $q \n";
-	print "p = $p \n";
         my $abs = combination($n-1,$p); #fixit: we don't want to compute this, we want to look for it in a table
-	print "abs = $abs \n";
 	my $subs = int($q-$abs);
 	if($subs > 0)
 	{
-	    print "thinks q>abs \n";
 	    push @quartet, $n;
 	    $n = $n-1;
 	    $p = $p-1;
