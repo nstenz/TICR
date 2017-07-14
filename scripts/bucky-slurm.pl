@@ -308,7 +308,8 @@ sub combination { ##http://stackoverflow.com/questions/10406411/efficient-inline
         $product *= $n--;
         $product /= $r--;
     }
-    return $product;
+    my $rounded = sprintf "%.0f", $product;
+    return $rounded;
 }
 
 sub whichQuartet {
@@ -319,14 +320,21 @@ sub whichQuartet {
     my @quartet;
     while($n > 1)
     {
+	#print "----\n";
+	#print "n = $n \n";
+	#print "q = $q \n";
+	#print "p = $p \n";
         my $abs = combination($n-1,$p); #fixit: we don't want to compute this, we want to look for it in a table
-	my $subs = int($q-$abs);
-	if($subs > 0)
+	#print "abs = $abs \n";
+	#my $subs = int($q-$abs);
+	#if($subs > 0)
+	if($q > $abs)
 	{
+	    #print "thinks q>abs \n";
 	    push @quartet, $n;
 	    $n = $n-1;
 	    $p = $p-1;
-	    $q = int($q-$abs);
+	    $q = $q-$abs;
 	}
 	else
 	{
