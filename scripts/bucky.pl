@@ -34,7 +34,7 @@ my $machine_file_path;
 # MrBayes block which will be used for each run
 my $mb_block;
 
-# Where this script is located 
+# Where this script is located
 my $script_path = abs_path($0);
 
 # Directory script was called from
@@ -227,7 +227,7 @@ if (-e $bucky_archive && -e $quartet_output) {
 
 	# Because it takes longer to append to a tarball than append to a text file, the tarball most
 	# likely has fewer quartet entries in it, we must therefore account for this ensuring that
-	# the tarball and csv have the same quartet entries 
+	# the tarball and csv have the same quartet entries
 
 	# See which quartets in the tarball are complete
 	chomp(my @complete_quartets_tarball = `tar tf '$init_dir/$project_name/$bucky_archive'`);
@@ -268,7 +268,7 @@ my @taxa;
 my @genes;
 if ($input_is_mbsum) {
 
-	# Unarchive input genes 
+	# Unarchive input genes
 	chomp(@genes = `tar xvf '$init_dir/$project_name/$archive' -C $mb_sum_dir 2>&1`);
 	@genes = map { s/x //; $_ } @genes if ($os_name eq "darwin");
 
@@ -311,7 +311,7 @@ if ($input_is_mbsum) {
 			$taxa{$taxon}++;
 		}
 	}
-	
+
 	# Add taxa present in all genes to analysis
 	foreach my $taxon (keys %taxa) {
 		if ($taxa{$taxon} == scalar(@genes)) {
@@ -324,7 +324,7 @@ if ($input_is_mbsum) {
 }
 else {
 
-	# Unarchive input genes 
+	# Unarchive input genes
 	chomp(@genes = `tar xvf '$init_dir/$archive' -C '$mb_out_dir' 2>&1`);
 	@genes = map { s/x //; $_ } @genes if ($os_name eq "darwin");
 
@@ -465,7 +465,7 @@ my $sock = IO::Socket::INET->new(
 	Blocking   => 0,
 	Reuse      => 1,
 	Listen     => SOMAXCONN,
-	Proto      => 'tcp') 
+	Proto      => 'tcp')
 or die "Could not create server socket: $!.\n";
 $sock->autoflush(1);
 
@@ -489,7 +489,7 @@ my @pids;
 foreach my $machine (@machines) {
 
 	# Fork and create a client on the given machine
-	my $pid = fork();	
+	my $pid = fork();
 	if ($pid == 0) {
 		close(STDIN);
 		close(STDOUT);
@@ -541,7 +541,7 @@ chdir($mb_sum_dir);
 
 my $select = IO::Select->new($sock);
 
-# Stores which job is next in queue 
+# Stores which job is next in queue
 my $job_number = 0;
 
 # Number of open connections to a client
@@ -599,12 +599,12 @@ while ((!defined($total_connections) || $closed_connections != $total_connection
 			# Client wants to send us a file
 			if ($response =~ /SEND_FILE: (.*)/) {
 				my $file_name = $1;
-				receive_file({'FILE_PATH' => $file_name, 'FILE_HANDLE' => $client});	
+				receive_file({'FILE_PATH' => $file_name, 'FILE_HANDLE' => $client});
 			}
 
 			# Client has finished a job
 			if ($response =~ /DONE '(.*)' '(.*)' \|\|/) {
-				$complete_count++;				
+				$complete_count++;
 				printf("  Analyses complete: %".$num_digits."d/%d.\r", $complete_count, scalar(@quartets));
 
 				my $completed_quartet = $1;
@@ -666,7 +666,7 @@ print "Total execution time: ", sec2human(time() - $time), ".\n\n";
 rmdir("$initial_directory/$project_name/$mb_sum_dir");
 
 sub client {
-	my ($opt_name, $address) = @_;	
+	my ($opt_name, $address) = @_;
 
 	my ($server_ip, $port) = split(":", $address);
 
@@ -677,7 +677,7 @@ sub client {
 	setpgrp();
 
 	# Determine this host's IP
-	chomp(my $ip = `dig +short myip.opendns.com \@resolver1.opendns.com`); 
+	chomp(my $ip = `dig +short myip.opendns.com \@resolver1.opendns.com`);
 
 	# Set IP to localhost if we don't have internet
 	if ($ip !~ /(?:[0-9]{1,3}\.){3}[0-9]{1,3}/) {
@@ -701,8 +701,8 @@ sub client {
 
 	# Spawn more clients
 	my @pids;
-	my $total_forks = get_free_cpus(); 
-	#my $total_forks = 1; 
+	my $total_forks = get_free_cpus();
+	#my $total_forks = 1;
 	if ($total_forks > 1) {
 		foreach my $fork (1 .. $total_forks - 1) {
 			my $pid = fork();
@@ -728,8 +728,8 @@ sub client {
 	# Connect to the server
 	my $sock = new IO::Socket::INET(
 		PeerAddr  => $server_ip.":".$port,
-		Proto => 'tcp') 
-	or exit(0); 
+		Proto => 'tcp')
+	or exit(0);
 	$sock->autoflush(1);
 
 	print {$sock} "NEW: $ip\n";
@@ -787,7 +787,7 @@ sub client {
 
 			# Send the results back to the server if this is a remote client
 			if ($server_ip ne "127.0.0.1" && $server_ip ne $ip) {
-				send_file({'FILE_PATH' => $quartet_archive_name, 'FILE_HANDLE' => $sock});	
+				send_file({'FILE_PATH' => $quartet_archive_name, 'FILE_HANDLE' => $sock});
 				unlink($quartet_archive_name);
 			}
 
@@ -940,14 +940,14 @@ sub parse_concordance_output {
 				my $taxon = $1;
 				my $line_end = $2;
 				push(@taxa, $taxon);
-				
+
 				$in_translate = 0 if ($line_end eq ';');
 			}
 		}
 
 		# Parse the split information
 		if ($in_all_splits) {
-			
+
 			# Set the split we are parsing information from
 			if ($line =~ /^(\{\S+\})/) {
 				my $current_split = $1;
@@ -967,7 +967,7 @@ sub parse_concordance_output {
 				$splits{$split}->{"CF"} = $1 / $ngenes;
 			}
 
-			# Parse 95% confidence interval 
+			# Parse 95% confidence interval
 			if ($line =~ /95% CI for CF = \((\d+),(\d+)\)/) {
 				#$splits{$split}->{"95%_CI"} = "(".($1 / $ngenes).",".($2 / $ngenes).")";
 				$splits{$split}->{"95%_CI_LO"} = ($1 / $ngenes);
@@ -1056,7 +1056,7 @@ sub parse_mb_log {
 		return {'SAMPLEFREQ' => $samplefreq, 'NRUNS' => $nruns, 'BURNIN' => $burnin, 'TAXA' => \@taxa};
 	}
 	else {
-		return {'NGEN' => $ngen, 'NRUNS' => $nruns, 'BURNINFRAC' => $burninfrac, 
+		return {'NGEN' => $ngen, 'NRUNS' => $nruns, 'BURNINFRAC' => $burninfrac,
 				'SAMPLEFREQ' => $samplefreq, 'TAXA' => \@taxa};
 	}
 }
@@ -1226,7 +1226,7 @@ sub INT_handler {
 	#dump_quartets(\%complete_queue);
 
 	unlink(@unlink);
-	
+
 	# Kill ssh process(es) spawned by this script
 	foreach my $pid (@pids) {
 		#kill(-9, $pid);
@@ -1281,7 +1281,7 @@ sub get_num_digits {
 		$digits++;
 	}
 
-	return $digits;	
+	return $digits;
 }
 
 sub sec2human {
@@ -1348,8 +1348,8 @@ sub get_free_cpus {
 		$percent_free_cpu =~ s/.*?(\d+\.\d+)%\s+id.*/$1/;
 	}
 	else {
-		# linux 
-		$percent_free_cpu =~ s/.*?(\d+\.\d)\s*%?ni,\s*(\d+\.\d)\s*%?id.*/$1 + $2/; # also includes %nice as free 
+		# linux
+		$percent_free_cpu =~ s/.*?(\d+\.\d)\s*%?ni,\s*(\d+\.\d)\s*%?id.*/$1 + $2/; # also includes %nice as free
 		$percent_free_cpu = eval($percent_free_cpu);
 	}
 
@@ -1368,7 +1368,7 @@ sub get_free_cpus {
 	if ($free_cpus == 0 || $free_cpus !~ /^\d+$/) {
 		$free_cpus = 1; # assume that at least one cpu can be used
 	}
-	
+
 	return $free_cpus;
 }
 
@@ -1386,7 +1386,7 @@ sub run_cmd {
 
 sub check_path_for_exec {
 	my $exec = shift;
-	
+
 	my $path = $ENV{PATH}.":."; # include current directory as well
 	my @path_dirs = split(":", $path);
 
@@ -1425,7 +1425,7 @@ sub check_bucky_version {
 	print "\nChecking for BUCKy version >= 1.4.4...\n";
 
 	# Run BUCKy with --version and extract version info
-	chomp(my @version_info = grep { /BUCKy version/ } `bucky --version`);
+	chomp(my @version_info = grep { /BUCKy version/ } `$bucky --version`);
 	my $version_info = shift(@version_info);
 
 	die "  Could not determine BUCKy version.\n" if (!defined($version_info));
@@ -1459,7 +1459,7 @@ sub check_bucky_version {
 		print "  BUCKy version check passed.\n";
 		return;
 	}
-	elsif (((defined($version_parts[0]) && $version_parts[0] == 1) && (defined($version_parts[1]) && $version_parts[1] == 4)) 
+	elsif (((defined($version_parts[0]) && $version_parts[0] == 1) && (defined($version_parts[1]) && $version_parts[1] == 4))
 		  && defined($version_parts[2]) && $version_parts[2] >= 4) {
 		print "  BUCKy version check passed.\n";
 		return;
@@ -1477,11 +1477,11 @@ sub usage {
 }
 
 sub help {
-print <<EOF; 
+print <<EOF;
 @{[usage()]}
 Parallel execution of BUCKy on all possible quartets in a given alignment
 
-  -a, --alpha            value of alpha to use when running BUCKy, use "infinity" for infinity (default: 1)      
+  -a, --alpha            value of alpha to use when running BUCKy, use "infinity" for infinity (default: 1)
   -n, --ngen             number of generations to run BUCKy MCMC chain (default: 1000000 generations)
   -o, --out-dir          name of the directory to store output files in (default: "bucky-" + Unix time of script invocation)
   -T, --n-threads        the number of forks ALL hosts running analyses can use concurrently (default: current number of free CPUs)

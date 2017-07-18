@@ -5,7 +5,7 @@
 ## things to do (fixit):
 ## - how many genes are acceptable per quartet?
 ## - what happens if a quartet has 0 genes? what does bucky do?
-## - we do not want to do the translate table over and over, so this script 
+## - we do not want to do the translate table over and over, so this script
 ##   should check if it exists
 
 use strict;
@@ -75,7 +75,7 @@ foreach my $gene (@genes) {
 
 
 
-# Instead of keeping only taxa that are shared in all genes, 
+# Instead of keeping only taxa that are shared in all genes,
 # we keep all taxa
 my @taxa;
 foreach my $taxon (keys %taxa) {
@@ -378,7 +378,7 @@ sub check_bucky_version {
 	print "\nChecking for BUCKy version >= 1.4.4...\n";
 
 	# Run BUCKy with --version and extract version info
-	chomp(my @version_info = grep { /BUCKy version/ } `bucky --version`);
+	chomp(my @version_info = grep { /BUCKy version/ } `$bucky --version`);
 	my $version_info = shift(@version_info);
 
 	die "  Could not determine BUCKy version.\n" if (!defined($version_info));
