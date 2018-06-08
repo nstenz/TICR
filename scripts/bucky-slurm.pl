@@ -2,6 +2,9 @@
 ## should be called:
 ## perl bucky-slurm.pl mbsum-folder -a alpha -n num-gen -q quartet-index -o output
 ## to test: perl bucky-slurm.pl mbsum -q 1
+## Improvement over bucky.pl:
+## - keeps all taxa (not only taxa shared in all genes)
+## - only runs one quartet, so it can be used with any job scheduler
 ## things to do (fixit):
 ## - how many genes are acceptable per quartet?
 ## - what happens if a quartet has 0 genes? what does bucky do?

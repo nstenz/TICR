@@ -1,4 +1,5 @@
 #!/usr/bin/perl
+## simply adding comments to bucky.pl to understand it
 use strict;
 use warnings;
 use POSIX;
