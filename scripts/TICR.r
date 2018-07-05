@@ -6,10 +6,11 @@
 # - R package "ape"
 # - TICR functions in file testingTreeWithQuartetCF.r, placed in ../ticr/
 # - quartet CF data: csv file with these column names in the header:
-#   "taxon1",...,"taxon4","CF12.34","CF13.24","CF14.23" 
+#   "taxon1",...,"taxon4","CF12.34","CF13.24","CF14.23"
+# Claudia: save at the end an Rda file with most important objects
 
 library(ape)
-source("../ticr/testingTreeWithQuartetCF.r")
+source("testingTreeWithQuartetCF.r")
 
 filename.root <- "chr4-subset"
 args <- commandArgs(TRUE)
@@ -20,6 +21,7 @@ cat("root for file names:",filename.root,"\n")
 tree.filename <- paste0(filename.root, ".QMClengths.tre")
 buckyCF.filename <- paste0(filename.root, ".CFs.csv")
 output.filename <- paste0(filename.root, ".ticr.txt")
+rda.filename <- paste0(filename.root, ".Rda")
 partialtree.pdf.filename <- paste0(filename.root, ".ticr.pdf")
 cat("output will be redirected to",output.filename,"\n")
 cat("                      and to",partialtree.pdf.filename,"\n")
@@ -28,7 +30,7 @@ zz <- file(output.filename, open="wt")
 sink(zz)
 sink(zz, type="message")
 
-tmp <- c(paste0("taxon",1:4),"CF12.34","CF13.24","CF14.23")
+tmp <- c(paste0("taxon",1:4),"CF12_34","CF13_24","CF14_23")
 # tmp = names of columns to extract
 dat <- read.csv(buckyCF.filename)[,tmp]
 if (ncol(dat) != 7)
@@ -89,7 +91,7 @@ mtext(paste0("Test of partial tree (search started from panmixia)\nalpha=",
 
 # forward + backward search starting from the full tree:
 cat("\nSearch for partial tree, starting from binary tree:\n\n")
-resF <- stepwise.test.tree(dat,guidetree,search="both", kbest=15, 
+resF <- stepwise.test.tree(dat,guidetree,search="both", kbest=15,
                            maxiter=100, startT="fulltree")
 resF[1:7]
 resF$outlier.table
@@ -97,6 +99,7 @@ mtext(paste0("Test of partial tree (search started from full tree)\nalpha=",
              round(resF$alpha,2),", X2=",round(resF$X2,2),", X2 pval=",signif(resF$chisq.pval,3)),
       side=3, adj=0.01, outer=T, line=-1)
 
+save(panmixia, fulltree, resP, resF, guidetree, file=rda.filename)
 
 dev.off()
 
