@@ -1,37 +1,58 @@
-Goal: Want to modify `mb.pl` and `bucky.pl` for SLURM.
+Goal: run the MrBayes and BUCKy steps (done by `mb.pl` and `bucky.pl`)
+on a cluster that uses the job scheduler SLURM.
 
 ## mb.pl
+
 Instead of the `mb.pl` script that parallelizes the MrBayes runs per gene, we want to use SLURM to parallelize the work. We have all the nexus files in the same folder, along with the following scripts:
-- The script `paste-mb-block.jl` will read all the nexus files in the directory, and will read a textfile with the MrBayes block to paste on all nexus files (option `‑m, ‑‑mb‑block` in the original `mb.pl` script). All the nexus files will be renamed: `1.nex, 2.nex,....`
-- The `mb-slurm-submit.sh` script will parallelize each gene run with SLURM. Change `--array` to the correct number of genes
+- The julia script [`paste-mb-block.jl`](scripts-cluster/paste-mb-block.jl) will read all the
+  nexus files in the directory, and will read a text file with the MrBayes block to paste
+  onto all nexus files (option `‑m, ‑‑mb‑block` in the original `mb.pl` script).
+  All the nexus files will be renamed: `1.nex, 2.nex, ...`
+- The submit script [`mb-slurm-submit.sh`](scripts-cluster/mb-slurm-submit.sh) will parallelize
+  all the individual-gene MrBayes runs with SLURM. Change `--array` to the correct number of genes.
 
 
-## bucky.pl
-Original `bucky.pl` runs `mbsum` and then `bucky` for all quartets. We want to have two separate scripts: 
+In the original pipeline, `bucky.pl` runs `mbsum` on each gene,
+and then `bucky` (using all genes) for each quartets.
+Here we have two separate steps, explained below. 
 
-### mbsum.pl
-Not done yet, but suppose that you have a directory where each file is of the form *.t and is a MrBayes output file.
-Use mbsum to summarize each file.  Remove the first 1000 trees of each for burnin.
+## mbsum.pl
+
+There is no such script yet, because this step is fast and the shell can suffice.
+Suppose that we have a directory where each file is of the form `*.t` and is a MrBayes output file.
+We can use `mbsum` to summarize a single `.t` file that correspond to one gene,
+removing the first 1000 trees of each for burnin.
+
+```shell
+for X in *.t; do mbsum -n 1000 $X; done
 ```
-  for X in *.t; do mbsum -n 1000 $X; done
-```
-This will create a file named <filename>.in for each file named <filename>.t .
-Warning!  It will overwrite files with the name <filename>.in if they exist.
+This would create a file named <filename>.in for each file named <filename>.t .
+Warning! It would overwrite files with the name <filename>.in if they exist.
 
-This can also be done with `mbsum-t-files.jl`. Warning: this script is hard-coded to 3 independent runs in MrBayes (but can be easily changed).
+Alternatively, the mbsum step can also be done with
+the julia script [`mbsum-t-files.jl`](scripts-cluster/mbsum-t-files.jl).
+Warning: this script is hard-coded to 3 independent runs per gene in MrBayes, and
+for 2500 generations of burnin (both can be easily changed).
 
-### bucky-slurm.pl 
-This script will run **just one** bucky for a given quartet and it will take as input:
+## bucky-slurm.pl 
+
+The perl script [`bucky-slurm.pl`](scripts-cluster/bucky-slurm.pl) will run `bucky`
+**just once**, for a single 4-taxon set (or quartet) and it will take as input:
   - mbsum folder name
   - output name
-  - bucky arguments: alpha,...
+  - bucky arguments: alpha, ...
   - integer for the given quartet
 
-The bucky script will provide as output a file for that quartet with the .concordance and a file with the parsed output in the form of the CF table (to append later).
+It will produce, as output, a file for the given 4-taxon set with the
+`.concordance` file and a file with the parsed output in the form of the CF table
+(to append later).
 
-It is run in SLURM with `bucky-slurm-submit.sh`. Change `--array` to the number of quartets.
+The perl script [`bucky-slurm.pl`](scripts-cluster/bucky-slurm.pl) can be run by SLURM
+with the submit script [`bucky-slurm-submit.sh`](scripts-cluster/bucky-slurm-submit.sh).
+Change `--array` to the appropriate number of 4-taxon sets for your data.
 
-**Note** Need to put the executable of bucky in `/workspace/software/bin`
+**Note** the `bucky` executable needs to be placed in `/workspace/software/bin`.
+Adjust the path as appropriate for your cluster.
 
 
 
