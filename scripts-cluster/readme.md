@@ -39,14 +39,14 @@ Warning! It would overwrite files with the name <filename>.in if they exist.
 Alternatively, the mbsum step can also be done with
 the julia script [`mbsum-t-files.jl`](mbsum-t-files.jl).
 This script takes as argument the folder name where all the tree files are located.  
-**warning: a burnin of 2500 generations is hard coded: this can easily be changed,
+**Warning**: a burnin of 2500 generations is hard coded: this can easily be changed,
 near the top of the file.
 
 ## bucky-slurm.pl 
 
 The perl script [`bucky-slurm.pl`](bucky-slurm.pl) will run `bucky`
 **just once**, for a single 4-taxon set (or quartet) and it will take as input:
-  - mbsum folder name
+  - mbsum folder name: containing all files created by `mbsum`, one per locus
   - output name: `-o` or `--out-dir` name of the directory to store output files in
   - bucky arguments: `-a` or `--alpha` for the prior alpha value,
     and `-n` or `--ngen` number of generations
