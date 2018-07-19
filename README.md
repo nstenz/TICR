@@ -19,7 +19,9 @@ The goal of this pipeline is to
    * [BUCKy](#bucky) to estimate quartet concordance factors
    * [Quartet MaxCut](#qmc) to estimate a binary population tree
 
-    For an alternative option to perform MrBayes and BUCKy on a cluster that has a job scheduler, see [here](https://github.com/crsl4/TICR/blob/master/readme-slurm.md).
+    For an alternative option to perform MrBayes and BUCKy on a cluster
+    that has a job scheduler, see
+    [here](https://github.com/crsl4/TICR/blob/master/scripts-cluster/readme.md).
 
 2. test panmixia, the adequacy of the coalescent on this binary population tree,
    and estimate a partially resolved tree with current or ancestral panmictic populations.
