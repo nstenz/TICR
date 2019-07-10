@@ -22,13 +22,14 @@ use Cwd qw(abs_path);
 use Fcntl qw(:flock SEEK_END);
 use POSIX qw(ceil :sys_wait_h);
 use File::Path qw(remove_tree);
+use File::Spec;
 use Time::HiRes qw(time usleep);
 ##use integer;
 
 # How the script was called
 my $invocation = "perl bucky-slurm.pl @ARGV";
 # Name of output directory
-my $project_name = "bucky-".int(time());
+my $outdir = "bucky-".int(time());
 # BUCKy settings
 my $alpha = 1;
 my $ngen = 1000000;
@@ -39,7 +40,7 @@ GetOptions(
 	"alpha|a=s"         => \$alpha,
 	"ngen|n=i"          => \$ngen,
 	"quartet|q=i"          => \$qind,
-	"out-dir|o=s"       => \$project_name,
+	"out-dir|o=s"       => \$outdir,
 	"help|h"            => sub { print &help; exit(0); },
 	"usage"             => sub { print &usage; exit(0); },
 );
@@ -53,6 +54,8 @@ check_bucky_version($bucky);
 
 ## this is the mbsum folder with files gene?.in
 my $archive = shift(@ARGV);
+# create output folder, if it doesn't exist already
+mkdir($outdir) || die "Could not create '$outdir'$!.\n" if (!-e $outdir);
 
 # Some error checking
 die "You must specify an archive file.\n\n", &usage if (!defined($archive));
@@ -94,7 +97,8 @@ print "Read $ntax taxa\n";
 my @quartet = whichQuartet($qind,$ntax);
 
 # Check if concordance file exists
-my $qscal = join("-", @quartet);
+my $qscal_basename = join("-", @quartet);
+my $qscal = File::Spec->catfile($outdir, $qscal_basename);
 my $concordance_file = "$qscal.concordance";
 
 ## check also that the file is not empty
@@ -129,8 +133,9 @@ close($prune_file);
 ## CF cutoff for display          | -cf number                 | 0.05
 ## taxon set                      | -p prune-file              | common taxa
 ## output root file name          | -o name                    | run1
+## skip genes with fewer taxa     | -sg                        | false
 
-my $cmd = "$bucky -a $alpha -n $ngen -cf 0 -o $qscal -p $prune_file_path $archive/*.in";
+my $cmd = "$bucky -a $alpha -n $ngen -cf 0 -o $qscal -sg -p $prune_file_path $archive/*.in";
 print "$cmd\n";
 system($cmd);
 
@@ -139,7 +144,7 @@ system($cmd);
 my $num_genes = get_used_genes("$qscal.out");
 my $keepQuartet = 1;
 if($num_genes < 2){ ## fixit: how many genes is good enough?
-    print "Quartet CF $qscal were estimated with only $num_genes, will skip this quartet\n";
+    print "Quartet CF $qscal_basename were estimated with only $num_genes, will skip this quartet\n";
     $keepQuartet = 0;
 }
 
