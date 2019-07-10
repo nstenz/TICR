@@ -276,7 +276,7 @@ sub parse_concordance_output {
 	}
 
 	# Append number of genes used
-	$return .= ",$ngenes";
+	$return .= ",$ngenes\n";
 
 	return $return;
 }
