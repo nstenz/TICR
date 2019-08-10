@@ -46,15 +46,16 @@ near the top of the file.
 
 The perl script [`bucky-slurm.pl`](bucky-slurm.pl) will run `bucky`
 **just once**, for a single 4-taxon set (or quartet) and it will take as input:
-  - mbsum folder name: containing all files created by `mbsum`, one per locus
+  - mbsum folder name: containing all files created by `mbsum`,
+    one per locus. These files need to be named `*.in` to be used.
   - output name: `-o` or `--out-dir` name of the directory to store output files in
   - bucky arguments: `-a` or `--alpha` for the prior alpha value,
     and `-n` or `--ngen` number of generations
   - integer for the given quartet
 
 It will produce, as output, a file for the given 4-taxon set with the
-`.concordance` file and a file with the parsed output in the form of the CF table
-(to append later).
+`.concordance` file and a file with the parsed output `.cf`
+in the form of the CF table (to append later).
 
 The perl script [`bucky-slurm.pl`](scripts-cluster/bucky-slurm.pl) can be run by SLURM
 with the submit script [`bucky-slurm-submit.sh`](scripts-cluster/bucky-slurm-submit.sh).
@@ -62,3 +63,14 @@ Change `--array` to the appropriate number of 4-taxon sets for your data.
 
 **Note** the `bucky` executable needs to be placed in `/workspace/software/bin`.
 Adjust the path as appropriate for your cluster.
+
+For each 4-taxon set, the parsed output file `.cf` contains a
+single line with data for this 4-taxon set, in this order:
+
+```
+"taxon1,taxon2,taxon3,taxon4,CF12_34,CF12_34_lo,CF12_34_hi,CF13_24,CF13_24_lo,CF13_24_hi,CF14_23,CF14_23_lo,CF14_23_hi,ngenes"
+```
+
+The line above should serve as header before concatenating
+all the individual parsed output files across all 4-taxon sets,
+with something like `cat bucky/*.cf >> CFtable.csv` .
