@@ -1,16 +1,19 @@
-## julia script to run mbsum on the results of MrBayes
-## run from the shell like this:
-##
-## julia path/to/mbsum-t-files.jl /path/to/mbtrees path/to/mbsumoutput burnin
-##
-## - The folder "/path/to/mbtrees" should have all the tree output files from MrBayes,
-##   which should be named xxx.run1.t, xxx.run2.t etc.
-## - The folder "path/to/mbsumoutput" will contain the output of mbsum. Will be created if needed.
-## - burnin is optional: 2501 by default.
-##
-## Assumes: Julia v1 or up; StatsBase package will be added if not done earlier.
-##
-## Claudia 2017-07, Cecile 2018-07, 2019-07
+#= julia script to run mbsum on the results of MrBayes
+run from the shell like this:
+
+julia path/to/mbsum-t-files.jl /path/to/mbtrees path/to/mbsumoutput burnin
+
+assumptions:
+- The folder "/path/to/mbtrees" should have
+  all the tree output files from MrBayes,
+  which should be named xxx.run1.t, xxx.run2.t etc.
+- The folder "path/to/mbsumoutput" will contain the output of mbsum.
+  Will be created if needed.
+- burnin is an optional argument: 2501 by default.
+- julia v1 or up. StatsBase package will be added if not done earlier.
+
+Claudia 2017-07; Cecile 2018-07, 2019-07
+=#
 
 # read folder names
 length(ARGS) >= 2 ||
@@ -52,7 +55,7 @@ files = String[]  # same list as allfiles, but with ".run?.t" stripped off each 
 for f in allfiles # loop to fill in "files"
     global maxNrun
     m = match(r"^(.*)\.run([0-9]+)\.t$", f)
-    if m!=nothing
+    if m !== nothing
         push!(files, m.captures[1])
         nruns = parse(Int, m.captures[2])
         if nruns > maxNrun maxNrun=nruns; end
