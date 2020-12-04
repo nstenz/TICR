@@ -1,4 +1,5 @@
 ## julia script to paste the mrbayes block in nexus files.
+## assumes julia v0.6 --incompatible with julia v1
 ## run from the shell like this:
 ##
 ## julia path/to/paste-mb-block.jl alignmentFolder
