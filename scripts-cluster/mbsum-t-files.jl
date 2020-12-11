@@ -33,7 +33,8 @@ if length(ARGS) >=3
 end
 
 # extract the list of all tree files: xxx.run1.t, xxx.run2.t, etc.
-allfiles = filter(x -> endswith(x, ".t"), readdir(mbFolder))
+allfiles = joinpath.(mbFolder, filter(x -> endswith(x, ".t"), readdir(mbFolder)))
+# readdir(mbFolder; join=true) requires julia v1.4 or higher
 if isempty(allfiles)
     for gene in readdir(mbFolder)
         subfolder = joinpath(mbFolder, gene)
