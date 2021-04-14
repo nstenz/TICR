@@ -42,7 +42,7 @@ my $qind = 1;
 GetOptions(
 	"alpha|a=s"         => \$alpha,
 	"ngen|n=i"          => \$ngen,
-	"quartet|q=i"          => \$qind,
+	"quartet|q=i"       => \$qind,
 	"out-dir|o=s"       => \$outdir,
 	"help|h"            => sub { print &help; exit(0); },
 	"usage"             => sub { print &usage; exit(0); },
@@ -58,7 +58,11 @@ check_bucky_version($bucky);
 ## this is the mbsum folder with files gene?.in
 my $archive = shift(@ARGV);
 # create output folder, if it doesn't exist already
-mkdir($outdir) || die "Could not create '$outdir'$!.\n" if (!-e $outdir);
+# mkdir($outdir) || die "Could not create '$outdir'$!.\n" if (!-e $outdir);
+# bug above when the script is run at almost the same time for multiple quartets:
+# the jobs interfere. One job (for one quartet) may find that the directory doesn't exist,
+# but then cannot create it because another job (quartet) just created it in the meantime.
+mkdir($outdir) if (!-e $outdir);
 
 # Some error checking
 die "You must specify an archive file.\n\n", &usage if (!defined($archive));
